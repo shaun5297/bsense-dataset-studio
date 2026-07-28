@@ -26,13 +26,21 @@ class ThemeTests(unittest.TestCase):
 
     def test_listeners_are_notified_on_change(self) -> None:
         seen = []
-        theme.on_change(seen.append)
+        unsubscribe = theme.on_change(seen.append)
         try:
             theme.set_mode("light")
             theme.set_mode("dark")
         finally:
-            theme._listeners.remove(seen.append)
+            unsubscribe()
         self.assertEqual(seen, ["light", "dark"])
+
+    def test_listener_can_be_unsubscribed_idempotently(self) -> None:
+        seen = []
+        unsubscribe = theme.on_change(seen.append)
+        unsubscribe()
+        unsubscribe()
+        theme.set_mode("light")
+        self.assertEqual(seen, [])
 
     def test_light_and_dark_palettes_differ(self) -> None:
         theme.set_mode("light")

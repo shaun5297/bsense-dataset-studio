@@ -53,9 +53,17 @@ def color(role: str) -> str:
     return _PALETTES[_mode][role]
 
 
-def on_change(listener: Callable[[str], None]) -> None:
-    """Register a callback invoked with the new mode after every switch."""
+def on_change(listener: Callable[[str], None]) -> Callable[[], None]:
+    """Register a callback and return an idempotent unsubscribe function."""
     _listeners.append(listener)
+
+    def unsubscribe() -> None:
+        try:
+            _listeners.remove(listener)
+        except ValueError:
+            pass
+
+    return unsubscribe
 
 
 def set_mode(new_mode: str, root: tk.Misc | None = None) -> str:

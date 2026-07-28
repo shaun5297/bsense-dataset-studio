@@ -149,7 +149,7 @@ class ExecutionWindow(Toplevel):
             command=self._request_abort,
         )
         self.abort_button.pack(side="right", padx=(0, 8))
-        theme.on_change(self._sync_theme_widgets)
+        self._unsubscribe_theme = theme.on_change(self._sync_theme_widgets)
 
     def _sync_theme_widgets(self, _mode: str) -> None:
         try:
@@ -358,6 +358,15 @@ class ExecutionWindow(Toplevel):
         self.destroy()
         if self._on_close_callback is not None:
             self._on_close_callback()
+
+    def destroy(self) -> None:
+        unsubscribe, self._unsubscribe_theme = (
+            getattr(self, "_unsubscribe_theme", None),
+            None,
+        )
+        if unsubscribe is not None:
+            unsubscribe()
+        super().destroy()
 
 
 class AnnotationDialog(Toplevel):
