@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from tkinter import StringVar, ttk
+
+try:
+    from tkinter import StringVar, ttk
+
+    _TaskViewBase = ttk.LabelFrame
+except ImportError:  # Tk unavailable (e.g. headless CI); preview helpers stay importable
+    StringVar = None  # type: ignore[assignment]
+    ttk = None  # type: ignore[assignment]
+    _TaskViewBase = object
 
 from ..protocols.base import Protocol, Step
 
@@ -145,7 +153,7 @@ def format_duration(seconds: float | None) -> str:
     return f"{minutes} 分 {remaining:g} 秒" if remaining else f"{minutes} 分钟"
 
 
-class TaskView(ttk.LabelFrame):
+class TaskView(_TaskViewBase):
     def __init__(self, parent: object) -> None:
         super().__init__(parent, text="协议预览", padding=14)
         self.columnconfigure(0, weight=1)

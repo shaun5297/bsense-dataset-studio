@@ -52,7 +52,7 @@ class XDFWriter:
         sample_struct = struct.Struct("<" + formats[channel_format] * channel_count) if channel_format in formats else None
         if channel_format != 3 and sample_struct is None:
             raise ValueError(f"unsupported LSL channel format: {channel_format}")
-        payload = bytearray(b"\x04" + struct.pack("<I", len(timestamps)))
+        payload = bytearray(encode_varlen_int(len(timestamps)))
         for timestamp, sample in zip(timestamps, samples, strict=True):
             if len(sample) != channel_count:
                 raise ValueError("sample channel count mismatch")

@@ -47,9 +47,34 @@ def discover(
     return found
 
 
+def _identity(info: Any, descriptor: StreamDescriptor) -> tuple[object, ...]:
+    return (
+        descriptor.kind,
+        descriptor.name,
+        descriptor.stream_type,
+        descriptor.channel_count,
+        descriptor.source_id,
+        str(_value(info, "hostname", "")),
+    )
+
+
+def dedupe_identical(found: Iterable[tuple[Any, StreamDescriptor]]) -> list[tuple[Any, StreamDescriptor]]:
+    """Collapse repeated sightings of the same stream.
+
+    On a LAN a single stream may be resolved several times (e.g. once per
+    network interface of the publishing host). Entries whose metadata are
+    fully identical refer to the same data source, so only the first
+    occurrence is kept.
+    """
+    unique: dict[tuple[object, ...], tuple[Any, StreamDescriptor]] = {}
+    for info, descriptor in found:
+        unique.setdefault(_identity(info, descriptor), (info, descriptor))
+    return list(unique.values())
+
+
 def select_unique(found: Iterable[tuple[Any, StreamDescriptor]], required: Iterable[str]) -> dict[str, tuple[Any, StreamDescriptor]]:
     grouped: dict[str, list[tuple[Any, StreamDescriptor]]] = {}
-    for item in found:
+    for item in dedupe_identical(found):
         grouped.setdefault(item[1].kind, []).append(item)
     missing = sorted(set(required) - grouped.keys())
     duplicates = sorted(kind for kind, items in grouped.items() if kind in required and len(items) != 1)
@@ -58,6 +83,9 @@ def select_unique(found: Iterable[tuple[Any, StreamDescriptor]], required: Itera
         if missing:
             details.append(f"缺少流：{', '.join(missing)}")
         if duplicates:
-            details.append(f"重复流：{', '.join(duplicates)}")
+            conflicts = ", ".join(
+                f"{kind}（{' / '.join(sorted({item[1].name for item in grouped[kind]}))}）" for kind in duplicates
+            )
+            details.append(f"重复流：{conflicts}")
         raise RuntimeError("；".join(details))
     return {kind: grouped[kind][0] for kind in required}

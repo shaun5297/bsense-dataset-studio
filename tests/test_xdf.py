@@ -44,6 +44,29 @@ class XDFTests(unittest.TestCase):
             self.assertEqual(streams[0]["info"]["name"][0], "EEG")
             self.assertEqual(len(streams[0]["time_stamps"]), 20)
 
+    def test_samples_chunk_uses_shortest_varlen_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shortest.xdf"
+            with XDFWriter(path) as writer:
+                writer.write_stream_header(1, '<?xml version="1.0"?><info><name>M</name></info>')
+                writer.write_samples(1, [1.0, 1.1], [[1.0], [2.0]], 1, 1)
+            data = path.read_bytes()
+        offset = 4  # skip the "XDF:" magic
+        while offset < len(data):
+            prefix = data[offset]
+            length_size = {1: 1, 4: 4, 8: 8}[prefix]
+            length = int.from_bytes(data[offset + 1 : offset + 1 + length_size], "little")
+            body = data[offset + 1 + length_size : offset + 1 + length_size + length]
+            offset += 1 + length_size + length
+            if int.from_bytes(body[:2], "little") != 3:  # not a Samples chunk
+                continue
+            # content: [StreamID:4][NumSamples varlen]... — 2 samples fit one byte
+            self.assertEqual(body[6], 1)
+            self.assertEqual(body[7], 2)
+            break
+        else:
+            self.fail("no Samples chunk written")
+
 
 if __name__ == "__main__":
     unittest.main()

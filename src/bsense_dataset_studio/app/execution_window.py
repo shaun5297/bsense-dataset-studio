@@ -7,7 +7,20 @@ from ..acquisition.protocol_engine import EngineSnapshot, ProtocolEngine
 from ..acquisition.session import AcquisitionSession, lsl_clock
 from ..annotations import ANNOTATION_TYPES
 from ..protocols import Protocol
-from ..protocols.definitions import InputField
+from ..protocols.definitions import InputField, ProtocolStep
+from .audio import play_cue
+
+
+def _stimulus_font(text: str) -> tuple[str, int, str]:
+    """Scale the stimulus font to the content so short stimuli dominate the screen."""
+    length = len(text)
+    if length <= 2:
+        return ("", 120, "bold")
+    if length <= 6:
+        return ("", 72, "bold")
+    if length <= 12:
+        return ("", 48, "bold")
+    return ("", 30, "bold")
 
 
 class ExecutionWindow(Toplevel):
@@ -30,17 +43,21 @@ class ExecutionWindow(Toplevel):
             on_change=self._render_snapshot,
         )
         self.title(f"BSense 采集执行 — {protocol.display_name}")
-        self.geometry("960x720")
-        self.minsize(820, 620)
+        self.geometry("1100x800")
+        self.minsize(900, 680)
         self.protocol("WM_DELETE_WINDOW", self._request_close)
         self.bind("<space>", self._handle_space)
+        self.bind("<Return>", self._handle_return)
+        self.bind("<F11>", self._toggle_fullscreen)
         self._form_variables: dict[str, StringVar | BooleanVar] = {}
         self._after_id: str | None = None
+        self._current_step: ProtocolStep | None = None
+        self._warning_played = False
 
-        container = ttk.Frame(self, padding=24)
+        container = ttk.Frame(self, padding=28)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(3, weight=1)
+        container.rowconfigure(4, weight=1)
         self.progress = StringVar(value="准备启动")
         self.countdown = StringVar(value="")
         self.title_text = StringVar(value="正在检查 8 路 LSL 流…")
@@ -48,31 +65,35 @@ class ExecutionWindow(Toplevel):
         ttk.Label(
             container,
             textvariable=self.progress,
+            font=("", 13),
             foreground="#4B5563",
         ).grid(row=0, column=0, sticky="ew")
+        self.progressbar = ttk.Progressbar(container, mode="determinate")
+        self.progressbar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         self.stimulus_label = ttk.Label(
             container,
             textvariable=self.title_text,
-            font=("", 34, "bold"),
+            font=("", 40, "bold"),
             anchor="center",
         )
-        self.stimulus_label.grid(row=1, column=0, sticky="ew", pady=(28, 10))
+        self.stimulus_label.grid(row=2, column=0, sticky="ew", pady=(28, 10))
         ttk.Label(
             container,
             textvariable=self.detail_text,
-            font=("", 14),
+            font=("", 18),
             anchor="center",
             justify="center",
-            wraplength=760,
-        ).grid(row=2, column=0, sticky="ew", pady=(0, 18))
+            wraplength=900,
+        ).grid(row=3, column=0, sticky="ew", pady=(0, 18))
 
         self.form_frame = ttk.Frame(container)
-        self.form_frame.grid(row=3, column=0, sticky="nsew")
+        self.form_frame.grid(row=4, column=0, sticky="nsew")
         self.form_frame.columnconfigure(1, weight=1)
 
         footer = ttk.Frame(container)
-        footer.grid(row=4, column=0, sticky="ew", pady=(16, 0))
-        ttk.Label(footer, textvariable=self.countdown).pack(side="left")
+        footer.grid(row=5, column=0, sticky="ew", pady=(16, 0))
+        self.countdown_label = ttk.Label(footer, textvariable=self.countdown, font=("", 16, "bold"))
+        self.countdown_label.pack(side="left")
         self.annotation_button = ttk.Button(
             footer,
             text="添加人工标注",
@@ -110,10 +131,15 @@ class ExecutionWindow(Toplevel):
 
     def _render_snapshot(self, snapshot: EngineSnapshot) -> None:
         if snapshot.finished:
+            self._play_step_sound(self._current_step, kind="end")
+            self._current_step = None
             self.progress.set("采集已结束")
+            self.progressbar.configure(value=self.progressbar["maximum"])
             self.title_text.set("数据已安全保存")
+            self.stimulus_label.configure(font=_stimulus_font("数据已安全保存"), foreground="")
             self.detail_text.set(str(self.session.storage.xdf))
             self.countdown.set("")
+            self.countdown_label.configure(foreground="")
             self.continue_button.configure(state="disabled")
             self.annotation_button.configure(state="disabled")
             self.abort_button.configure(text="关闭", command=self._finish_close)
@@ -121,16 +147,28 @@ class ExecutionWindow(Toplevel):
         step = snapshot.step
         if step is None:
             return
+        if step is not self._current_step:
+            self._play_step_sound(self._current_step, kind="end")
+            self._current_step = step
+            self._warning_played = False
+            self._play_step_sound(step, kind="start")
         self.progress.set(
             f"{self.protocol_spec.display_name}  ·  步骤 {snapshot.index + 1}/{snapshot.total}"
         )
+        self.progressbar.configure(maximum=snapshot.total, value=snapshot.index + 1)
         if step.event == "pvt_start":
-            self.title_text.set("●" if snapshot.pvt_stimulus_active else "+")
+            stimulus_active = snapshot.pvt_stimulus_active
+            self.title_text.set("●" if stimulus_active else "+")
+            self.stimulus_label.configure(
+                font=("", 120, "bold"),
+                foreground="#F59E0B" if stimulus_active else "#9CA3AF",
+            )
             self.detail_text.set(
                 "黄色圆点出现后立即按空格；等待期间不要抢按。"
             )
         else:
             self.title_text.set(step.text)
+            self.stimulus_label.configure(font=_stimulus_font(step.text), foreground="")
             self.detail_text.set(step.detail)
         self._build_form(step.fields)
         enabled = step.advance_mode in {"form", "operator"}
@@ -181,6 +219,21 @@ class ExecutionWindow(Toplevel):
             messagebox.showerror("响应记录失败", str(exc), parent=self)
         return "break"
 
+    def _handle_return(self, _event: object) -> str | None:
+        if str(self.continue_button["state"]) == "normal":
+            self._submit()
+            return "break"
+        return None
+
+    def _toggle_fullscreen(self, _event: object) -> None:
+        self.attributes("-fullscreen", not bool(self.attributes("-fullscreen")))
+
+    def _play_step_sound(self, step: ProtocolStep | None, *, kind: str) -> None:
+        if step is None:
+            return
+        name = step.end_sound if kind == "end" else step.start_sound
+        play_cue(name, bell=self.bell)
+
     def _schedule_tick(self) -> None:
         self._after_id = self.after(40, self._tick)
 
@@ -195,11 +248,23 @@ class ExecutionWindow(Toplevel):
                 elapsed = lsl_clock() - self.engine.step_started_at
                 if step.text_after and step.text_duration is not None and elapsed >= step.text_duration:
                     self.title_text.set(step.text_after)
+                    self.stimulus_label.configure(font=_stimulus_font(step.text_after))
                 if step.duration_s is not None:
                     remaining = max(0.0, step.duration_s - elapsed)
                     self.countdown.set(f"剩余 {remaining:.1f} 秒")
+                    ending_soon = step.duration_s > 10.0 and remaining <= 5.0
+                    self.countdown_label.configure(foreground="#DC2626" if ending_soon else "")
+                    if (
+                        step.warning_sound
+                        and step.warning_at is not None
+                        and not self._warning_played
+                        and remaining <= step.warning_at
+                    ):
+                        self._warning_played = True
+                        play_cue(step.warning_sound, bell=self.bell)
                 else:
                     self.countdown.set("等待填写/确认")
+                    self.countdown_label.configure(foreground="")
         except Exception as exc:
             messagebox.showerror("采集执行失败", str(exc), parent=self)
             return
