@@ -6,6 +6,7 @@ from tkinter import Tk, messagebox, ttk
 from ..acquisition.session import AcquisitionSession
 from ..protocols import build
 from ..protocols.sequences import assign_sequence_set
+from . import theme
 from .execution_window import ExecutionWindow
 from .operator_view import OperatorView
 from .protocol_view import ProtocolView
@@ -15,6 +16,7 @@ from .task_view import TaskView
 
 class StudioApp:
     def __init__(self, root: Tk, *, dataset_root: Path | None = None) -> None:
+        theme.apply(root)
         root.title("BSense Dataset Studio")
         root.geometry("1180x760")
         root.minsize(980, 680)
@@ -26,12 +28,20 @@ class StudioApp:
 
         header = ttk.Frame(container)
         header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
+        self.theme_button = ttk.Button(
+            header,
+            text=self._theme_button_text(),
+            command=self._toggle_theme,
+        )
+        self.theme_button.pack(side="right")
         ttk.Label(header, text="BSense Dataset Studio", font=("", 24, "bold")).pack(anchor="w")
-        ttk.Label(
+        self.subtitle_label = ttk.Label(
             header,
             text="脑安检研究数据采集、实验标注与数据集构建；不输出正式岗位建议。",
-            foreground="#374151",
-        ).pack(anchor="w", pady=(4, 0))
+            foreground=theme.color("secondary"),
+        )
+        self.subtitle_label.pack(anchor="w", pady=(4, 0))
+        theme.on_change(self._sync_theme)
 
         left = ttk.Frame(container)
         left.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
@@ -121,6 +131,20 @@ class StudioApp:
     def _collection_closed(self) -> None:
         self.execution_window = None
         self.operator.set_running(False)
+
+    def _theme_button_text(self) -> str:
+        return "切换到日间模式" if theme.mode() == "dark" else "切换到夜间模式"
+
+    def _toggle_theme(self) -> None:
+        theme.toggle(self.task.winfo_toplevel())
+        self._sync_theme(theme.mode())
+
+    def _sync_theme(self, _mode: str) -> None:
+        try:
+            self.theme_button.configure(text=self._theme_button_text())
+            self.subtitle_label.configure(foreground=theme.color("secondary"))
+        except Exception:
+            pass  # widget already destroyed
 
 
 def run(*, dataset_root: Path | None = None) -> None:

@@ -50,6 +50,15 @@ class FailingRecorder(FakeRecorder):
         raise RuntimeError("missing stream")
 
 
+class ClosablePublisher(FakePublisher):
+    def __init__(self, path: Path, markers: list[object]) -> None:
+        super().__init__(path, markers)
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class AcquisitionSessionTests(unittest.TestCase):
     def test_form_sart_and_finalize_are_one_append_only_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -242,6 +251,45 @@ class AcquisitionSessionTests(unittest.TestCase):
                 "start_failed",
             )
             self.assertEqual(session.state, SessionState.FAILED)
+
+    def test_publisher_is_closed_on_finalize(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = plan_run_storage(directory, "P001", "01", "deviceqc", "004")
+            protocol = Protocol("deviceqc", "test", "test", "2.0", ())
+            publishers: list[ClosablePublisher] = []
+            session = AcquisitionSession(
+                storage,
+                protocol,
+                participant_id="P001",
+                session_id="01",
+                run_id="004",
+                recorder_factory=FakeRecorder,
+                publisher_factory=lambda path: publishers.append(ClosablePublisher(path, [])) or publishers[-1],
+                quality_builder=None,
+            )
+            session.start()
+            session.publish("experiment_start")
+            session.finalize()
+            self.assertTrue(publishers[0].closed)
+
+    def test_publisher_is_closed_on_start_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = plan_run_storage(directory, "P001", "01", "deviceqc", "005")
+            protocol = Protocol("deviceqc", "test", "test", "2.0", ())
+            publishers: list[ClosablePublisher] = []
+            session = AcquisitionSession(
+                storage,
+                protocol,
+                participant_id="P001",
+                session_id="01",
+                run_id="005",
+                recorder_factory=FailingRecorder,
+                publisher_factory=lambda path: publishers.append(ClosablePublisher(path, [])) or publishers[-1],
+                quality_builder=None,
+            )
+            with self.assertRaises(RuntimeError):
+                session.start()
+            self.assertTrue(publishers[0].closed)
 
 
 if __name__ == "__main__":
