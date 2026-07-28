@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bsense-dataset-studio"
+version = "0.1.0"
+description = "Multimodal cognitive-state acquisition, annotation, and dataset construction"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = ["pylsl==1.18.2"]
+
+[project.optional-dependencies]
+dataset = ["numpy>=1.26", "pyxdf>=1.17"]
+release = ["pyinstaller>=6.0"]
+
+[project.scripts]
+bsense-dataset-studio = "bsense_dataset_studio.cli.run_studio:main"
+bsense-dataset-monitor = "bsense_dataset_studio.cli.run_monitor:main"
+bsense-dataset-build = "bsense_dataset_studio.cli.build_dataset:main"
+bsense-dataset-validate = "bsense_dataset_studio.cli.validate_dataset:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+bsense_dataset_studio = ["assets/*.png", "audio/*.wav"]

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "events": {
+    "experiment_start": 100,
+    "experiment_end": 199,
+    "quality_gate": 210,
+    "baseline_open": 220,
+    "sart_stimulus": 310,
+    "sart_response": 311,
+    "pvt_stimulus": 320,
+    "pvt_response": 321,
+    "operator_annotation": 900
+  }
+}

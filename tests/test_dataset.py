@@ -1,0 +1,57 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from bsense_dataset_studio.dataset.builder import build_records
+from bsense_dataset_studio.dataset.manifest import build_manifest, save_manifest, subject_split
+
+
+class DatasetTests(unittest.TestCase):
+    def test_subject_split_is_deterministic_and_disjoint(self) -> None:
+        subjects = [f"P{index:03d}" for index in range(20)]
+        first = subject_split(subjects)
+        second = subject_split(reversed(subjects))
+        self.assertEqual(first, second)
+        values = [set(first[key]) for key in ("train_subjects", "validation_subjects", "test_subjects")]
+        self.assertFalse(values[0] & values[1])
+        self.assertFalse(values[0] & values[2])
+        self.assertFalse(values[1] & values[2])
+        self.assertEqual(set(subjects), set.union(*values))
+
+    def test_manifest_records_raw_xdf(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw" / "sub-P001" / "ses-01"
+            raw.mkdir(parents=True)
+            (raw / "sample.xdf").write_bytes(b"XDF:")
+            path = save_manifest(root, build_manifest(root))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["records"], ["raw/sub-P001/ses-01/sample.xdf"])
+
+    def test_builder_joins_context_quality_events_and_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stem = "sub-P001_ses-01_task-m6_readiness_study_run-001"
+            raw = root / "raw" / "sub-P001" / "ses-01"
+            raw.mkdir(parents=True)
+            (raw / f"{stem}.xdf").write_bytes(b"XDF:")
+            (raw / f"{stem}_context.json").write_text(
+                json.dumps({"protocol_version": "1.0", "software_version": "0.1.0"}),
+                encoding="utf-8",
+            )
+            (raw / f"{stem}_events.jsonl").write_text(
+                json.dumps({"timestamp": 1.0, "event": "sart_trial", "payload": {"should_respond": True, "outcome": "hit", "reaction_time_s": 0.4, "valid": True}}) + "\n",
+                encoding="utf-8",
+            )
+            quality = root / "quality"
+            quality.mkdir()
+            (quality / f"{stem}_quality.json").write_text(json.dumps({"overall_status": "pass"}), encoding="utf-8")
+            rows = build_records(root)
+            self.assertEqual(rows[0]["participant"], "P001")
+            self.assertEqual(rows[0]["quality_status"], "pass")
+            self.assertEqual(rows[0]["valid_trial_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

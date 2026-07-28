@@ -1,0 +1,11 @@
+.DS_Store
+.venv/
+.venv-supported/
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+dataset_root/restricted/
+dataset_root/raw/
+dataset_root/derived/
