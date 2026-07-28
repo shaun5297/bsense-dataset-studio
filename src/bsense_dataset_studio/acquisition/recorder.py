@@ -29,8 +29,8 @@ class _State:
     channel_count: int
     channel_format: int
     count: int = 0
-    first: float = 0.0
-    last: float = 0.0
+    first: float | None = None
+    last: float | None = None
     next_clock_offset_at: float = 0.0
     clock_offset_count: int = 0
 
@@ -47,6 +47,7 @@ class Recorder:
     def start(self, *, timeout: float = 5.0) -> None:
         if self._thread and self._thread.is_alive():
             raise RuntimeError("recorder already running")
+        self.error = None
         selected = select_unique(discover(timeout), self.required_kinds)
         from pylsl import StreamInlet, local_clock
 
@@ -106,7 +107,8 @@ class Recorder:
                                 state.channel_format,
                             )
                             state.count += len(timestamps)
-                            state.first = state.first or float(timestamps[0])
+                            if state.first is None:
+                                state.first = float(timestamps[0])
                             state.last = float(timestamps[-1])
                     if not received:
                         time.sleep(0.005)
@@ -114,7 +116,12 @@ class Recorder:
                 self.error = exc
             finally:
                 for state in states:
-                    writer.write_stream_footer(state.stream_id, state.first, state.last, state.count)
+                    writer.write_stream_footer(
+                        state.stream_id,
+                        state.first if state.first is not None else 0.0,
+                        state.last if state.last is not None else 0.0,
+                        state.count,
+                    )
                     try:
                         state.inlet.close_stream()
                     except Exception:
@@ -139,8 +146,8 @@ class Recorder:
         return {
             state.kind: {
                 "sample_count": state.count,
-                "first_timestamp": state.first or None,
-                "last_timestamp": state.last or None,
+                "first_timestamp": state.first,
+                "last_timestamp": state.last,
                 "clock_offset_count": state.clock_offset_count,
             }
             for state in self._states
