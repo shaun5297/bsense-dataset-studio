@@ -41,6 +41,38 @@ def _stimulus_font(text: str) -> tuple[str, int, str]:
     return ("", 30, "bold")
 
 
+class _BooleanToggle(ttk.Frame):
+    """Large, theme-proof checkbox.
+
+    ttk.Checkbutton indicator glyphs differ across themes (a check in one
+    theme can render as a cross in another), so the state is shown with
+    explicit text glyphs plus a colored status word instead.
+    """
+
+    def __init__(self, parent: object, variable: BooleanVar) -> None:
+        super().__init__(parent)
+        self._variable = variable
+        self._box = ttk.Label(self, font=("", 20), cursor="hand2")
+        self._box.pack(side="left")
+        self._state = ttk.Label(self, font=("", 14))
+        self._state.pack(side="left", padx=(10, 0))
+        for widget in (self, self._box, self._state):
+            widget.bind("<Button-1>", self._toggle)
+        variable.trace_add("write", lambda *_args: self._sync())
+        self._sync()
+
+    def _toggle(self, _event: object | None = None) -> None:
+        self._variable.set(not self._variable.get())
+
+    def _sync(self) -> None:
+        checked = bool(self._variable.get())
+        self._box.configure(text="☑" if checked else "☐")
+        self._state.configure(
+            text="已确认" if checked else "点击确认",
+            foreground=theme.color("ok") if checked else theme.color("muted"),
+        )
+
+
 class ExecutionWindow(Toplevel):
     def __init__(
         self,
@@ -72,6 +104,8 @@ class ExecutionWindow(Toplevel):
         self._after_id: str | None = None
         self._current_step: ProtocolStep | None = None
         self._warning_played = False
+        self._quality_prev_counts: dict[str, int] = {}
+        self._quality_ticks = 0
 
         container = ttk.Frame(self, padding=28)
         container.pack(fill="both", expand=True)
@@ -81,13 +115,23 @@ class ExecutionWindow(Toplevel):
         self.countdown = StringVar(value="")
         self.title_text = StringVar(value="正在检查 8 路 LSL 流…")
         self.detail_text = StringVar(value="Marker 流会先创建，再启动 XDF Recorder。")
+        header = ttk.Frame(container)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        self.quality_badge = ttk.Label(
+            header,
+            text="◌ 未连接",
+            font=("", 13, "bold"),
+            foreground=theme.color("muted"),
+        )
+        self.quality_badge.grid(row=0, column=0, sticky="w", padx=(0, 14))
         self.progress_label = ttk.Label(
-            container,
+            header,
             textvariable=self.progress,
             font=("", 13),
             foreground=theme.color("secondary"),
         )
-        self.progress_label.grid(row=0, column=0, sticky="ew")
+        self.progress_label.grid(row=0, column=1, sticky="w")
         self.progressbar = ttk.Progressbar(container, mode="determinate")
         self.progressbar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
@@ -177,11 +221,25 @@ class ExecutionWindow(Toplevel):
         if snapshot.finished:
             self._play_step_sound(self._current_step, kind="end")
             self._current_step = None
-            self.progress.set("采集已结束")
+            aborted = self.session.context_values.get("completion_status") == "aborted"
+            self.progress.set("采集已中止" if aborted else "采集已结束")
             self.progressbar.configure(value=self.progressbar["maximum"])
-            self.title_text.set("数据已安全保存")
-            self.stimulus_label.configure(font=_stimulus_font("数据已安全保存"), foreground="")
-            self.detail_text.set(str(self.session.storage.xdf))
+            if aborted:
+                reason = str(self.session.context_values.get("abort_reason") or "operator_requested")
+                self.title_text.set("采集已中止")
+                self.stimulus_label.configure(
+                    font=_stimulus_font("采集已中止"),
+                    foreground=theme.color("error"),
+                )
+                self.detail_text.set(f"中止原因：{reason}\n已采集数据仍已保存：{self.session.storage.xdf}")
+            else:
+                self.title_text.set("数据已安全保存")
+                self.stimulus_label.configure(font=_stimulus_font("数据已安全保存"), foreground=theme.color("ok"))
+                note = ""
+                if self.session.context_values.get("practice_criterion_met") is False:
+                    note = "（SART 练习未达标，已记录并继续）\n"
+                self.detail_text.set(note + str(self.session.storage.xdf))
+            self.quality_badge.configure(text="◌ 已结束", foreground=theme.color("muted"))
             self.countdown.set("")
             self.countdown_label.configure(foreground="")
             self.continue_button.configure(state="disabled")
@@ -224,16 +282,16 @@ class ExecutionWindow(Toplevel):
         self._form_variables.clear()
         self._choice_values.clear()
         for row, field in enumerate(fields):
-            ttk.Label(self.form_frame, text=field.label).grid(
+            ttk.Label(self.form_frame, text=field.label, font=("", 15)).grid(
                 row=row,
                 column=0,
                 sticky="w",
-                padx=(0, 10),
-                pady=5,
+                padx=(0, 14),
+                pady=7,
             )
             if field.kind == "boolean":
                 variable = BooleanVar(value=False)
-                widget = ttk.Checkbutton(self.form_frame, variable=variable)
+                widget = _BooleanToggle(self.form_frame, variable)
             else:
                 variable = StringVar()
                 if field.kind == "choice":
@@ -244,10 +302,11 @@ class ExecutionWindow(Toplevel):
                         textvariable=variable,
                         values=labels,
                         state="readonly",
+                        font=("", 15),
                     )
                 else:
-                    widget = ttk.Entry(self.form_frame, textvariable=variable)
-            widget.grid(row=row, column=1, sticky="ew", pady=5)
+                    widget = ttk.Entry(self.form_frame, textvariable=variable, font=("", 15))
+            widget.grid(row=row, column=1, sticky="ew", pady=7)
             self._form_variables[field.key] = variable
 
     def _submit(self) -> None:
@@ -310,7 +369,7 @@ class ExecutionWindow(Toplevel):
                     remaining = max(0.0, step.duration_s - elapsed)
                     self.countdown.set(f"剩余 {remaining:.1f} 秒")
                     ending_soon = step.duration_s > 10.0 and remaining <= 5.0
-                    self.countdown_label.configure(foreground="#DC2626" if ending_soon else "")
+                    self.countdown_label.configure(foreground=theme.color("error") if ending_soon else "")
                     if (
                         step.warning_sound
                         and step.warning_at is not None
@@ -325,7 +384,33 @@ class ExecutionWindow(Toplevel):
         except Exception as exc:
             messagebox.showerror("采集执行失败", str(exc), parent=self)
             return
+        self._quality_ticks += 1
+        if self._quality_ticks >= 25:  # ~1s at a 40 ms tick
+            self._quality_ticks = 0
+            self._update_quality_badge()
         self._schedule_tick()
+
+    _CORE_KIND_LABELS = (("eeg", "EEG"), ("fnirs", "fNIRS"), ("motion", "Motion"))
+
+    def _update_quality_badge(self) -> None:
+        summary = self.session.recorder_summary()
+        if not summary:
+            self.quality_badge.configure(text="◌ 未连接", foreground=theme.color("muted"))
+            return
+        stalled: list[str] = []
+        for kind, label in self._CORE_KIND_LABELS:
+            info = summary.get(kind) or {}
+            count = int(info.get("sample_count") or 0)  # type: ignore[union-attr]
+            if count <= self._quality_prev_counts.get(kind, 0):
+                stalled.append(label)
+            self._quality_prev_counts[kind] = count
+        if not stalled:
+            text, role = "● 信号正常", "ok"
+        elif len(stalled) == len(self._CORE_KIND_LABELS):
+            text, role = "● 信号中断", "error"
+        else:
+            text, role = f"● 信号异常：{' / '.join(stalled)}", "warn"
+        self.quality_badge.configure(text=text, foreground=theme.color(role))
 
     def _open_annotation_dialog(self) -> None:
         AnnotationDialog(self, self.session)

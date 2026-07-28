@@ -1,9 +1,11 @@
 """Light/dark theme support for the studio UI.
 
 The ttk ``clam`` theme is reconfigured from a small palette so every window
-can switch between day and night mode at runtime. Widgets created with
-explicit ``foreground=`` colors should read them via :func:`color` and
-refresh through :func:`on_change`.
+can switch between day and night mode at runtime. The palettes follow
+GitHub's Primer colors: flat surfaces, subtle single-tone borders and one
+accent color, which keeps the interface calm in a dim lab. Widgets created
+with explicit ``foreground=`` colors should read them via :func:`color`
+and refresh through :func:`on_change`.
 """
 
 from __future__ import annotations
@@ -18,24 +20,30 @@ _MODES = ("light", "dark")
 
 _PALETTES: dict[str, dict[str, str]] = {
     "light": {
-        "bg": "#F3F4F6",
-        "fg": "#111827",
+        "bg": "#F6F8FA",
+        "fg": "#1F2328",
         "field": "#FFFFFF",
-        "border": "#D1D5DB",
-        "secondary": "#4B5563",
-        "muted": "#6B7280",
-        "accent": "#2563EB",
+        "border": "#D0D7DE",
+        "secondary": "#57606A",
+        "muted": "#6E7781",
+        "accent": "#0969DA",
         "select_fg": "#FFFFFF",
+        "ok": "#1A7F37",
+        "warn": "#9A6700",
+        "error": "#CF222E",
     },
     "dark": {
-        "bg": "#111827",
-        "fg": "#E5E7EB",
-        "field": "#1F2937",
-        "border": "#374151",
-        "secondary": "#9CA3AF",
-        "muted": "#6B7280",
-        "accent": "#3B82F6",
+        "bg": "#0D1117",
+        "fg": "#E6EDF3",
+        "field": "#161B22",
+        "border": "#30363D",
+        "secondary": "#8B949E",
+        "muted": "#6E7681",
+        "accent": "#2F81F7",
         "select_fg": "#FFFFFF",
+        "ok": "#3FB950",
+        "warn": "#D29922",
+        "error": "#F85149",
     },
 }
 
@@ -49,7 +57,7 @@ def mode() -> str:
 
 
 def color(role: str) -> str:
-    """Current theme color for a role (bg/fg/field/border/secondary/muted/accent)."""
+    """Current theme color for a role (bg/fg/field/border/secondary/muted/accent/ok/warn/error)."""
     return _PALETTES[_mode][role]
 
 
@@ -91,17 +99,37 @@ def apply(root: tk.Misc) -> None:
         background=p["bg"],
         foreground=p["fg"],
         bordercolor=p["border"],
+        darkcolor=p["border"],
+        lightcolor=p["border"],
         fieldbackground=p["field"],
+        troughcolor=p["bg"],
+        borderwidth=1,
+        focusthickness=1,
+        focuscolor=p["accent"],
     )
     style.configure("TFrame", background=p["bg"])
     style.configure("TLabel", background=p["bg"], foreground=p["fg"])
-    style.configure("TLabelframe", background=p["bg"], foreground=p["fg"], bordercolor=p["border"])
+    style.configure("TSeparator", background=p["border"])
+    style.configure(
+        "TLabelframe",
+        background=p["bg"],
+        foreground=p["fg"],
+        bordercolor=p["border"],
+        borderwidth=1,
+    )
     style.configure("TLabelframe.Label", background=p["bg"], foreground=p["fg"])
-    style.configure("TButton", background=p["field"], foreground=p["fg"], bordercolor=p["border"])
+    style.configure(
+        "TButton",
+        background=p["field"],
+        foreground=p["fg"],
+        bordercolor=p["border"],
+        padding=(12, 6),
+    )
     style.map(
         "TButton",
         background=[("pressed", p["accent"]), ("active", p["border"])],
-        foreground=[("disabled", p["muted"])],
+        foreground=[("pressed", p["select_fg"]), ("disabled", p["muted"])],
+        bordercolor=[("focus", p["accent"])],
     )
     style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
     style.map("TCheckbutton", background=[("active", p["bg"])])
@@ -111,13 +139,16 @@ def apply(root: tk.Misc) -> None:
         foreground=p["fg"],
         insertcolor=p["fg"],
         bordercolor=p["border"],
+        padding=4,
     )
+    style.map("TEntry", bordercolor=[("focus", p["accent"])])
     style.configure(
         "TCombobox",
         fieldbackground=p["field"],
         foreground=p["fg"],
         bordercolor=p["border"],
         arrowcolor=p["fg"],
+        padding=4,
     )
     style.map(
         "TCombobox",
@@ -125,6 +156,8 @@ def apply(root: tk.Misc) -> None:
         foreground=[("readonly", p["fg"])],
         selectbackground=[("readonly", p["field"])],
         selectforeground=[("readonly", p["fg"])],
+        bordercolor=[("focus", p["accent"])],
+        arrowcolor=[("disabled", p["muted"])],
     )
     style.configure(
         "Treeview",
@@ -132,14 +165,27 @@ def apply(root: tk.Misc) -> None:
         foreground=p["fg"],
         fieldbackground=p["field"],
         bordercolor=p["border"],
+        rowheight=28,
     )
     style.map(
         "Treeview",
         background=[("selected", p["accent"])],
         foreground=[("selected", p["select_fg"])],
     )
-    style.configure("Treeview.Heading", background=p["bg"], foreground=p["fg"], bordercolor=p["border"])
-    style.configure("TProgressbar", background=p["accent"], troughcolor=p["field"], bordercolor=p["border"])
+    style.configure(
+        "Treeview.Heading",
+        background=p["bg"],
+        foreground=p["fg"],
+        bordercolor=p["border"],
+        padding=(6, 4),
+    )
+    style.configure(
+        "TProgressbar",
+        background=p["accent"],
+        troughcolor=p["field"],
+        bordercolor=p["border"],
+        thickness=8,
+    )
     for orient in ("Vertical", "Horizontal"):
         style.configure(
             f"{orient}.TScrollbar",
@@ -147,6 +193,10 @@ def apply(root: tk.Misc) -> None:
             troughcolor=p["bg"],
             bordercolor=p["border"],
             arrowcolor=p["fg"],
+        )
+        style.map(
+            f"{orient}.TScrollbar",
+            background=[("active", p["border"])],
         )
     root.option_add("*TCombobox*Listbox.background", p["field"])
     root.option_add("*TCombobox*Listbox.foreground", p["fg"])
