@@ -21,7 +21,7 @@ class SetupView(ttk.LabelFrame):
         self.dataset_root = StringVar(value=str(initial_root or load_dataset_root()))
         self.output_preview = StringVar()
         self.storage_status = StringVar(value="选择目录后，点击“准备目录”进行创建与检查。")
-        self._task = "m6_readiness_study"
+        self._task = "m6_readiness_reference"
 
         identifiers = (
             ("匿名被试", self.participant),

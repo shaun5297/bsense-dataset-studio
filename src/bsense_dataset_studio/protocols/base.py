@@ -1,20 +1,5 @@
-from __future__ import annotations
+from .definitions import InputField, Protocol, ProtocolStep
 
-from dataclasses import dataclass
+Step = ProtocolStep
 
-
-@dataclass(frozen=True)
-class Step:
-    name: str
-    duration_s: float | None
-    instruction: str
-    marker: str
-
-
-@dataclass(frozen=True)
-class Protocol:
-    task: str
-    display_name: str
-    category: str
-    version: str
-    steps: tuple[Step, ...]
+__all__ = ["InputField", "Protocol", "ProtocolStep", "Step"]

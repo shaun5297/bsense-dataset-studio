@@ -14,6 +14,8 @@ def classify_trial(
     trial: int | None = None,
     stimulus: str | None = None,
     valid: bool = True,
+    response_count: int | None = None,
+    invalid_reason: str | None = None,
 ) -> dict[str, object]:
     responded = response_time_s is not None
     false_start = bool(responded and float(response_time_s) < FALSE_START_SECONDS)
@@ -32,10 +34,14 @@ def classify_trial(
         "stimulus": stimulus,
         "should_respond": should_respond,
         "responded": responded,
+        "response_count": response_count if response_count is not None else int(responded),
+        "multiple_response": bool(response_count is not None and response_count > 1),
         "reaction_time_s": round(float(response_time_s), 6) if responded else None,
         "outcome": outcome,
         "false_start": false_start,
+        "correct": outcome in {"hit", "correct_rejection"},
         "valid": valid,
+        "invalid_reason": invalid_reason,
     }
 
 

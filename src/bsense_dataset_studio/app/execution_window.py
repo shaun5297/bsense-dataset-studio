@@ -1,0 +1,314 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from tkinter import BooleanVar, StringVar, Toplevel, messagebox, ttk
+
+from ..acquisition.protocol_engine import EngineSnapshot, ProtocolEngine
+from ..acquisition.session import AcquisitionSession, lsl_clock
+from ..annotations import ANNOTATION_TYPES
+from ..protocols import Protocol
+from ..protocols.definitions import InputField
+
+
+class ExecutionWindow(Toplevel):
+    def __init__(
+        self,
+        parent: object,
+        session: AcquisitionSession,
+        protocol: Protocol,
+        *,
+        on_close: Callable[[], None] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.session = session
+        self.protocol_spec = protocol
+        self._on_close_callback = on_close
+        self.engine = ProtocolEngine(
+            session,
+            protocol,
+            clock=lsl_clock,
+            on_change=self._render_snapshot,
+        )
+        self.title(f"BSense 采集执行 — {protocol.display_name}")
+        self.geometry("960x720")
+        self.minsize(820, 620)
+        self.protocol("WM_DELETE_WINDOW", self._request_close)
+        self.bind("<space>", self._handle_space)
+        self._form_variables: dict[str, StringVar | BooleanVar] = {}
+        self._after_id: str | None = None
+
+        container = ttk.Frame(self, padding=24)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(3, weight=1)
+        self.progress = StringVar(value="准备启动")
+        self.countdown = StringVar(value="")
+        self.title_text = StringVar(value="正在检查 8 路 LSL 流…")
+        self.detail_text = StringVar(value="Marker 流会先创建，再启动 XDF Recorder。")
+        ttk.Label(
+            container,
+            textvariable=self.progress,
+            foreground="#4B5563",
+        ).grid(row=0, column=0, sticky="ew")
+        self.stimulus_label = ttk.Label(
+            container,
+            textvariable=self.title_text,
+            font=("", 34, "bold"),
+            anchor="center",
+        )
+        self.stimulus_label.grid(row=1, column=0, sticky="ew", pady=(28, 10))
+        ttk.Label(
+            container,
+            textvariable=self.detail_text,
+            font=("", 14),
+            anchor="center",
+            justify="center",
+            wraplength=760,
+        ).grid(row=2, column=0, sticky="ew", pady=(0, 18))
+
+        self.form_frame = ttk.Frame(container)
+        self.form_frame.grid(row=3, column=0, sticky="nsew")
+        self.form_frame.columnconfigure(1, weight=1)
+
+        footer = ttk.Frame(container)
+        footer.grid(row=4, column=0, sticky="ew", pady=(16, 0))
+        ttk.Label(footer, textvariable=self.countdown).pack(side="left")
+        self.annotation_button = ttk.Button(
+            footer,
+            text="添加人工标注",
+            command=self._open_annotation_dialog,
+        )
+        self.annotation_button.pack(side="right")
+        self.continue_button = ttk.Button(
+            footer,
+            text="确认并继续",
+            command=self._submit,
+            state="disabled",
+        )
+        self.continue_button.pack(side="right", padx=(0, 8))
+        self.abort_button = ttk.Button(
+            footer,
+            text="中止采集",
+            command=self._request_abort,
+        )
+        self.abort_button.pack(side="right", padx=(0, 8))
+
+    def start(self) -> None:
+        try:
+            self.engine.start()
+        except Exception as exc:
+            messagebox.showerror("无法启动采集", str(exc), parent=self)
+            self.destroy()
+            if self._on_close_callback is not None:
+                self._on_close_callback()
+            return
+        self.focus_force()
+        self._schedule_tick()
+
+    def abort(self) -> None:
+        self._request_abort()
+
+    def _render_snapshot(self, snapshot: EngineSnapshot) -> None:
+        if snapshot.finished:
+            self.progress.set("采集已结束")
+            self.title_text.set("数据已安全保存")
+            self.detail_text.set(str(self.session.storage.xdf))
+            self.countdown.set("")
+            self.continue_button.configure(state="disabled")
+            self.annotation_button.configure(state="disabled")
+            self.abort_button.configure(text="关闭", command=self._finish_close)
+            return
+        step = snapshot.step
+        if step is None:
+            return
+        self.progress.set(
+            f"{self.protocol_spec.display_name}  ·  步骤 {snapshot.index + 1}/{snapshot.total}"
+        )
+        if step.event == "pvt_start":
+            self.title_text.set("●" if snapshot.pvt_stimulus_active else "+")
+            self.detail_text.set(
+                "黄色圆点出现后立即按空格；等待期间不要抢按。"
+            )
+        else:
+            self.title_text.set(step.text)
+            self.detail_text.set(step.detail)
+        self._build_form(step.fields)
+        enabled = step.advance_mode in {"form", "operator"}
+        self.continue_button.configure(state="normal" if enabled else "disabled")
+
+    def _build_form(self, fields: tuple[InputField, ...]) -> None:
+        for child in self.form_frame.winfo_children():
+            child.destroy()
+        self._form_variables.clear()
+        for row, field in enumerate(fields):
+            ttk.Label(self.form_frame, text=field.label).grid(
+                row=row,
+                column=0,
+                sticky="w",
+                padx=(0, 10),
+                pady=5,
+            )
+            if field.kind == "boolean":
+                variable = BooleanVar(value=False)
+                widget = ttk.Checkbutton(self.form_frame, variable=variable)
+            else:
+                variable = StringVar()
+                if field.kind == "choice":
+                    widget = ttk.Combobox(
+                        self.form_frame,
+                        textvariable=variable,
+                        values=field.choices,
+                        state="readonly",
+                    )
+                else:
+                    widget = ttk.Entry(self.form_frame, textvariable=variable)
+            widget.grid(row=row, column=1, sticky="ew", pady=5)
+            self._form_variables[field.key] = variable
+
+    def _submit(self) -> None:
+        values = {key: variable.get() for key, variable in self._form_variables.items()}
+        try:
+            self.engine.advance(values)
+        except ValueError as exc:
+            messagebox.showwarning("表单未完成", str(exc), parent=self)
+        except Exception as exc:
+            messagebox.showerror("步骤执行失败", str(exc), parent=self)
+
+    def _handle_space(self, _event: object) -> str:
+        try:
+            self.engine.handle_response("space")
+        except Exception as exc:
+            messagebox.showerror("响应记录失败", str(exc), parent=self)
+        return "break"
+
+    def _schedule_tick(self) -> None:
+        self._after_id = self.after(40, self._tick)
+
+    def _tick(self) -> None:
+        self._after_id = None
+        if self.engine.finished:
+            return
+        try:
+            snapshot = self.engine.tick()
+            step = snapshot.step
+            if step is not None and self.engine.step_started_at is not None:
+                elapsed = lsl_clock() - self.engine.step_started_at
+                if step.text_after and step.text_duration is not None and elapsed >= step.text_duration:
+                    self.title_text.set(step.text_after)
+                if step.duration_s is not None:
+                    remaining = max(0.0, step.duration_s - elapsed)
+                    self.countdown.set(f"剩余 {remaining:.1f} 秒")
+                else:
+                    self.countdown.set("等待填写/确认")
+        except Exception as exc:
+            messagebox.showerror("采集执行失败", str(exc), parent=self)
+            return
+        self._schedule_tick()
+
+    def _open_annotation_dialog(self) -> None:
+        AnnotationDialog(self, self.session)
+
+    def _request_abort(self) -> None:
+        if self.engine.finished:
+            self._finish_close()
+            return
+        if not messagebox.askyesno(
+            "确认中止",
+            "将停止录制并保存已采集数据，同时标记本次 Run 为 aborted。是否继续？",
+            parent=self,
+        ):
+            return
+        try:
+            self.engine.abort("operator_requested")
+        except Exception as exc:
+            messagebox.showerror("中止失败", str(exc), parent=self)
+
+    def _request_close(self) -> None:
+        if self.engine.finished:
+            self._finish_close()
+        else:
+            self._request_abort()
+
+    def _finish_close(self) -> None:
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+        self.destroy()
+        if self._on_close_callback is not None:
+            self._on_close_callback()
+
+
+class AnnotationDialog(Toplevel):
+    def __init__(self, parent: ExecutionWindow, session: AcquisitionSession) -> None:
+        super().__init__(parent)
+        self.session = session
+        self.title("人工标注")
+        self.resizable(False, False)
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        self.annotation_type = StringVar(value=ANNOTATION_TYPES[0])
+        self.note = StringVar()
+        self.severity = StringVar(value="minor")
+        self.duration_seconds = StringVar(value="0")
+        self.exclude = BooleanVar(value=False)
+        for row, label in enumerate(
+            ("标注类型", "说明", "严重程度", "向前覆盖秒数")
+        ):
+            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Combobox(
+            frame,
+            textvariable=self.annotation_type,
+            values=ANNOTATION_TYPES,
+            state="readonly",
+            width=28,
+        ).grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Entry(frame, textvariable=self.note).grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        ttk.Combobox(
+            frame,
+            textvariable=self.severity,
+            values=("minor", "major"),
+            state="readonly",
+        ).grid(row=2, column=1, sticky="ew", pady=4)
+        ttk.Entry(
+            frame,
+            textvariable=self.duration_seconds,
+        ).grid(row=3, column=1, sticky="ew", pady=4)
+        ttk.Checkbutton(
+            frame,
+            text="从训练数据中排除此时点",
+            variable=self.exclude,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 4))
+        ttk.Button(frame, text="保存标注", command=self._save).grid(
+            row=5,
+            column=0,
+            columnspan=2,
+            sticky="e",
+            pady=(10, 0),
+        )
+        frame.columnconfigure(1, weight=1)
+        self.transient(parent)
+        self.grab_set()
+
+    def _save(self) -> None:
+        try:
+            duration = float(self.duration_seconds.get())
+            if duration < 0:
+                raise ValueError("向前覆盖秒数不能为负数")
+            end = lsl_clock()
+            self.session.annotate(
+                self.annotation_type.get(),
+                self.note.get(),
+                start_timestamp=end - duration,
+                end_timestamp=end,
+                exclude_from_training=self.exclude.get(),
+                severity=self.severity.get(),
+            )
+        except Exception as exc:
+            messagebox.showerror("标注保存失败", str(exc), parent=self)
+            return
+        self.destroy()

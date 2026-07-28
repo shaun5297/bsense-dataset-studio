@@ -10,7 +10,8 @@ from ..behavior.pvt import (
     PVT_B_LAPSE_SECONDS,
     PVT_B_TIMEOUT_SECONDS,
 )
-from .definitions import InputField, Step, _experiment_bounds
+from .definitions import InputField, Step, experiment_bounds
+
 
 def _sart_sequence(count: int, rng: random.Random) -> list[str]:
     """Build a reproducible sequence with roughly 11% no-go trials and no adjacent no-go."""
@@ -81,18 +82,60 @@ def build_m6_plan(
     short: bool = False,
     seed: int = 0,
     readiness_reference: bool = True,
+    protocol_task: str = "m6_readiness_reference",
+    protocol_title: str = "脑安检正式参考采集",
+    sequence_set_id: str = "sart-v1-A",
     **_: object,
 ) -> list[Step]:
-    """Build the competition prototype for a pre-shift readiness screen."""
+    """Build a research acquisition protocol for cognitive readiness."""
 
     rng = random.Random(seed)
     assessment_trial_count = 18 if short else 180
+    assessment_sequence = _sart_sequence(assessment_trial_count, rng)
     background_fields = (
-        InputField("sleep_duration_hours", "过去 24 小时累计睡眠（小时，可填小数）", "number", 0, 24),
+        InputField(
+            "study_condition",
+            "实验条件",
+            "choice",
+            choices=(
+                "rested_control",
+                "natural_fatigue",
+                "post_night_shift",
+                "post_shift",
+                "post_rest_retest",
+                "sleep_restricted",
+                "unknown_naturalistic",
+            ),
+        ),
+        InputField(
+            "condition_source",
+            "实验条件来源",
+            "choice",
+            choices=("operator_assigned", "schedule_derived", "participant_reported"),
+        ),
+        InputField(
+            "sleep_duration_hours",
+            "过去 24 小时累计睡眠（小时，可填小数）",
+            "number",
+            0,
+            24,
+        ),
         InputField("last_sleep_onset_time", "最近一次入睡时间（HH:MM）", "text"),
         InputField("last_wake_time", "最近一次起床时间（HH:MM）", "text"),
-        InputField("continuous_awake_hours", "截至采集时连续清醒时长（小时）", "number", 0, 72),
-        InputField("caffeine_mg_last_8h", "过去 8 小时咖啡因摄入量（mg；无则填 0）", "number", 0, 2000),
+        InputField(
+            "continuous_awake_hours",
+            "截至采集时连续清醒时长（小时）",
+            "number",
+            0,
+            72,
+        ),
+        InputField(
+            "caffeine_mg_last_8h",
+            "过去 8 小时咖啡因摄入量（mg；无则填 0）",
+            "number",
+            0,
+            2000,
+        ),
         InputField("last_caffeine_time", "最近咖啡因摄入时间（HH:MM；无则留空）", "text", required=False),
         InputField(
             "shift_type",
@@ -103,6 +146,18 @@ def build_m6_plan(
     )
     precheck_fields = (
         InputField("kss_score", "采集前 KSS（1=非常清醒，9=极度困倦）", "rating", 1, 9),
+        InputField(
+            "measurement_phase",
+            "测量阶段",
+            "choice",
+            choices=("first_test", "retest"),
+        ),
+        InputField(
+            "parent_session_id",
+            "关联首次检测 Session（首次检测留空）",
+            "text",
+            required=False,
+        ),
         InputField(
             "parent_run_id",
             "关联首次检测 Run（首次检测留空）",
@@ -122,7 +177,7 @@ def build_m6_plan(
     body: list[Step] = [
         Step(
             "脑状态安检",
-            "本流程只输出当班风险等级，不展示原始脑信号，不用于医疗诊断、自动上岗或处罚。",
+            "本流程只用于研究采集和验证，不输出正式岗位建议，不用于医疗诊断、自动上岗或处罚。",
             2.0 if short else 5.0,
             "readiness_intro",
             709,
@@ -133,7 +188,7 @@ def build_m6_plan(
             0.0,
             "readiness_background_start",
             710,
-            advance="form",
+            advance_mode="form",
             completion_event="readiness_background",
             completion_code=711,
             fields=background_fields,
@@ -145,7 +200,7 @@ def build_m6_plan(
             0.0,
             "readiness_context_start",
             716,
-            advance="form",
+            advance_mode="form",
             completion_event="readiness_context",
             completion_code=717,
             fields=precheck_fields,
@@ -163,7 +218,7 @@ def build_m6_plan(
         Step(
             "+",
             "睁眼个体当次基线：注视中央，保持放松和清醒。",
-            2.0 if short else 45.0,
+            2.0 if short else 60.0,
             "readiness_baseline_start",
             714,
             completion_event="readiness_baseline_end",
@@ -177,7 +232,7 @@ def build_m6_plan(
             719,
         ),
         *_sart_steps(
-            ["1", "2", "3", "4"],
+            ["1", "2", "3", "4", "5", "6", "7", "3", "8", "1", "2", "4"],
             block="sart_practice",
             trial_kind="practice",
             duration=0.5 if short else 1.0,
@@ -188,10 +243,19 @@ def build_m6_plan(
             1.0 if short else 2.0,
             "sart_start",
             720,
-            metadata={"expected_trials": assessment_trial_count},
+            metadata={
+                "expected_trials": assessment_trial_count,
+                "sequence_set_id": sequence_set_id,
+                "random_seed": seed,
+                "no_go_positions": [
+                    index
+                    for index, stimulus in enumerate(assessment_sequence, start=1)
+                    if stimulus == "3"
+                ],
+            },
         ),
         *_sart_steps(
-            _sart_sequence(assessment_trial_count, rng),
+            assessment_sequence,
             block="sart_assessment",
             trial_kind="assessment",
             duration=0.5 if short else 1.0,
@@ -212,7 +276,7 @@ def build_m6_plan(
             0.0,
             "readiness_postcheck_start",
             732,
-            advance="form",
+            advance_mode="form",
             completion_event="readiness_postcheck",
             completion_code=733,
             fields=(
@@ -270,15 +334,16 @@ def build_m6_plan(
         )
     body.append(
         Step(
-            "正在生成结果",
-            "PVT 只作为独立研究参照，不进入当前四态规则。",
+            "正在完成研究记录",
+            "参考状态标签将在采集结束后由不含 EEG 的独立信息生成。",
             0.5 if short else 4.0,
-            "readiness_assessment",
+            "reference_label_pending",
             730,
             metadata={
                 "expected_trials": assessment_trial_count,
                 "readiness_reference_enabled": readiness_reference,
+                "reference_label_version": "reference-label-v1-provisional",
             },
         )
     )
-    return _experiment_bounds("m6_readiness", body)
+    return experiment_bounds(protocol_task, protocol_title, body)

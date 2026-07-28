@@ -23,18 +23,20 @@ class TaskPreviewTests(unittest.TestCase):
         self.assertNotIn("+", [stage.display_title for stage in stages])
 
     def test_readiness_preview_collapses_sart_trials(self) -> None:
-        stages = build_preview_stages(build("m6_readiness_study"))
+        stages = build_preview_stages(build("m6_readiness_field"))
         self.assertLess(len(stages), 15)
         practice = next(stage for stage in stages if stage.key == "sart_practice")
         assessment = next(stage for stage in stages if stage.key == "sart_assessment")
-        self.assertEqual(practice.item_count, 4)
+        self.assertEqual(practice.item_count, 12)
         self.assertEqual(assessment.item_count, 180)
         self.assertIn("postcheck", [stage.key for stage in stages])
         self.assertNotIn("pvt", [stage.key for stage in stages])
 
     def test_pvt_badge_source_is_present_only_when_enabled(self) -> None:
-        stages = build_preview_stages(build("m6_readiness_study", include_pvt=True))
-        self.assertIn("pvt", [stage.key for stage in stages])
+        reference = build_preview_stages(build("m6_readiness_reference"))
+        field = build_preview_stages(build("m6_readiness_field"))
+        self.assertIn("pvt", [stage.key for stage in reference])
+        self.assertNotIn("pvt", [stage.key for stage in field])
 
     def test_duration_format_is_compact(self) -> None:
         self.assertEqual(format_duration(None), "填写/确认")

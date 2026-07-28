@@ -39,10 +39,14 @@ _STAGE_TEXT = {
     "signal_gate": ("信号质量检查", "检查 EEG、fNIRS、Motion 和 LSL 完整性，质量不合格时先调整设备。"),
     "readiness_baseline": ("睁眼基线", "建立本次佩戴条件下的 EEG、fNIRS 和运动噪声参考。"),
     "sart_instruction": ("SART 任务说明", "除数字 3 外都按空格；看到数字 3 时不要按。"),
-    "sart_practice": ("SART 练习", "通过少量练习试次确认受试者已理解按键规则。"),
+    "sart_practice": ("SART 练习", "通过 12 个练习试次确认受试者已理解按键规则。"),
     "sart_assessment": ("SART 正式任务", "记录命中、漏检、抑制错误、抢按和反应时间，并与生理信号同步。"),
     "postcheck": ("采后 KSS", "任务结束后再次记录即时困倦程度，用于研究前后比较。"),
     "pvt": ("PVT-B 研究参照", "可选的 3 分钟警觉任务，仅作为独立研究参照，不进入产品主流程。"),
+    "reference_label_pending": (
+        "完成研究记录",
+        "采集结束后使用 KSS、PVT、SART 和睡眠背景生成可追溯的研究参考标签。",
+    ),
 }
 
 _ARTIFACT_EVENTS = {
@@ -67,7 +71,12 @@ def _stage_key(step: Step, *, assessment_started: bool) -> str:
         return "open_rest"
     if event.startswith("rest_closed"):
         return "closed_rest"
-    if event.startswith("block_") or event.startswith("step_") or event in _ARTIFACT_EVENTS:
+    if (
+        event.startswith("block_")
+        or event.startswith("step_")
+        or event in _ARTIFACT_EVENTS
+        or step.block in _ARTIFACT_EVENTS
+    ):
         return "artifact_check"
     if event == "readiness_intro":
         return "readiness_intro"

@@ -31,11 +31,32 @@ def subject_split(
 
 def build_manifest(dataset_root: Path) -> DatasetManifest:
     raw_root = dataset_root / "raw"
-    records = tuple(sorted(str(path.relative_to(dataset_root)) for path in raw_root.rglob("*.xdf"))) if raw_root.exists() else ()
+    records = (
+        tuple(
+            sorted(
+                str(path.relative_to(dataset_root))
+                for path in raw_root.rglob("*.xdf")
+            )
+        )
+        if raw_root.exists()
+        else ()
+    )
     subjects = [part.name.removeprefix("sub-") for part in raw_root.glob("sub-*") if part.is_dir()]
     created_at = datetime.now(timezone.utc).isoformat()
-    dataset_id = hashlib.sha256((created_at + "\n".join(records)).encode()).hexdigest()[:16]
-    return DatasetManifest(dataset_id, created_at, __version__, records, subject_split(subjects))
+    checksums = {
+        record: _sha256(dataset_root / record)
+        for record in records
+    }
+    identity = json.dumps(checksums, ensure_ascii=False, sort_keys=True)
+    dataset_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return DatasetManifest(
+        dataset_id,
+        created_at,
+        __version__,
+        records,
+        subject_split(subjects),
+        metadata={"record_sha256": checksums},
+    )
 
 
 def save_manifest(dataset_root: Path, manifest: DatasetManifest) -> Path:
@@ -43,3 +64,11 @@ def save_manifest(dataset_root: Path, manifest: DatasetManifest) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

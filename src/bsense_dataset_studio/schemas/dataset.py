@@ -10,7 +10,7 @@ class DatasetManifest:
     software_version: str
     records: tuple[str, ...]
     subject_splits: dict[str, tuple[str, ...]]
-    dataset_schema_version: str = "1.0"
+    dataset_schema_version: str = "1.1"
     metadata: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:

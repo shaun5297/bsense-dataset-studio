@@ -1,12 +1,10 @@
-"""Detailed acquisition-step definitions retained from bsense-lsl v0.8.0."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal
 
 
-AdvanceMode = Literal["timed", "operator", "form"]
+AdvanceMode = Literal["timed", "operator", "form", "response_or_timeout"]
 
 
 @dataclass(frozen=True)
@@ -21,15 +19,17 @@ class InputField:
 
 
 @dataclass(frozen=True)
-class Step:
+class ProtocolStep:
+    """Single source of truth for protocol preview and execution."""
+
     text: str
     detail: str
-    duration: float
-    event: str | None = None
-    code: int | None = None
+    duration_s: float | None
+    event: str
+    event_code: int | None = None
     block: str | None = None
     trial: int | None = None
-    advance: AdvanceMode = "timed"
+    advance_mode: AdvanceMode = "timed"
     completion_event: str | None = None
     completion_code: int | None = None
     response_key: str | None = None
@@ -43,33 +43,46 @@ class Step:
     text_duration: float | None = None
     text_after: str | None = None
 
+    @property
+    def name(self) -> str:
+        return self.event
+
+    @property
+    def duration(self) -> float:
+        return float(self.duration_s or 0.0)
+
+    @property
+    def instruction(self) -> str:
+        return "\n".join(value for value in (self.text, self.detail) if value)
+
+    @property
+    def marker(self) -> str:
+        return self.event
+
 
 @dataclass(frozen=True)
-class ProtocolInfo:
+class Protocol:
     task: str
-    title: str
-    description: str
-    priority: str
+    display_name: str
+    category: str
+    version: str
+    steps: tuple[ProtocolStep, ...]
+    description: str = ""
+    reference_labels_expected: bool = False
 
 
-PROTOCOLS = (
-    ProtocolInfo("deviceqc", "设备 QC", "验证信号、同步与常见伪迹（正式采集前推荐）", "联调"),
-    ProtocolInfo(
-        "m6_readiness",
-        "M6 班前认知准备度研究协议",
-        "脑安检训练与验证数据采集",
-        "赛道7",
-    ),
-)
-
-PROTOCOL_BY_TASK = {protocol.task: protocol for protocol in PROTOCOLS}
+Step = ProtocolStep
 
 
-def _experiment_bounds(task: str, body: list[Step]) -> list[Step]:
+def experiment_bounds(
+    task: str,
+    title: str,
+    body: list[ProtocolStep],
+) -> list[ProtocolStep]:
     return [
-        Step(
+        ProtocolStep(
             "实验即将开始",
-            PROTOCOL_BY_TASK[task].title,
+            title,
             4.0,
             "experiment_start",
             10,
@@ -77,7 +90,7 @@ def _experiment_bounds(task: str, body: list[Step]) -> list[Step]:
             start_sound="start",
         ),
         *body,
-        Step(
+        ProtocolStep(
             "模块完成",
             "请保持放松，正在结束本模块录制",
             1.0,

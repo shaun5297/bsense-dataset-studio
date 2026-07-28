@@ -1,59 +1,101 @@
 from __future__ import annotations
 
-from .base import Protocol, Step
+from dataclasses import dataclass
+
+from .definitions import Protocol
 from .device_qc import build_deviceqc_plan
 from .readiness_study import build_m6_plan
+from .sequences import SART_SEQUENCE_SEEDS, sequence_seed
+
+
+@dataclass(frozen=True)
+class _ProtocolSpec:
+    task: str
+    display_name: str
+    category: str
+    description: str
+    include_pvt: bool
+    reference_labels_expected: bool
+
 
 _SPECS = (
-    ("deviceqc", "设备质量检查", "设备与基线"),
-    ("m6_readiness_study", "脑安检研究采集", "认知准备度"),
+    _ProtocolSpec(
+        "deviceqc",
+        "设备质量检查",
+        "设备与基线",
+        "验证信号、同步和常见伪迹，不作为认知状态训练样本。",
+        False,
+        False,
+    ),
+    _ProtocolSpec(
+        "m6_readiness_reference",
+        "脑安检正式参考采集",
+        "认知准备度",
+        "用于训练集和验证集采集，包含完整背景、KSS、SART 与 PVT-B。",
+        True,
+        True,
+    ),
+    _ProtocolSpec(
+        "m6_readiness_field",
+        "脑安检现场泛化采集",
+        "认知准备度",
+        "用于现场外部验证和领域适配，不包含 PVT-B。",
+        False,
+        False,
+    ),
 )
 
-
-_BUILDERS = {
-    "deviceqc": build_deviceqc_plan,
-    "m6_readiness_study": build_m6_plan,
-}
+_SPEC_BY_TASK = {spec.task: spec for spec in _SPECS}
 
 
-def _details(
+def build(
     task: str,
-    display_name: str,
-    category: str,
-    short: bool,
-    include_pvt: bool,
+    *,
+    short: bool = False,
+    sequence_set_id: str = "sart-v1-A",
+    include_pvt: bool | None = None,
 ) -> Protocol:
-    builder = _BUILDERS[task]
-    legacy_steps = builder(short=short, seed=0, readiness_reference=include_pvt)
-    steps: list[Step] = []
-    for index, item in enumerate(legacy_steps, 1):
-        event = str(item.event or item.completion_event or f"step_{index:04d}")
-        if task == "m6_readiness_study" and event == "readiness_assessment":
-            continue
-        instruction = "\n".join(value for value in (item.text, item.detail) if value)
-        if task == "m6_readiness_study":
-            instruction = instruction.replace("脑状态安检", "班前认知准备度研究")
-            instruction = instruction.replace(
-                "本流程只输出当班风险等级，不展示原始脑信号，不用于医疗诊断、自动上岗或处罚。",
-                "本流程用于研究采集与验证，不向被试或管理人员输出正式岗位建议。",
-            )
-        steps.append(
-            Step(
-                name=event,
-                duration_s=float(item.duration) if item.duration > 0 else None,
-                instruction=instruction,
-                marker=str(item.event or item.completion_event or "step"),
-            )
+    if task == "m6_readiness_study":
+        task = "m6_readiness_reference" if include_pvt else "m6_readiness_field"
+    try:
+        spec = _SPEC_BY_TASK[task]
+    except KeyError as exc:
+        raise KeyError(f"未知协议：{task}") from exc
+
+    if task == "deviceqc":
+        steps = build_deviceqc_plan(short=short)
+    else:
+        if sequence_set_id not in SART_SEQUENCE_SEEDS:
+            raise ValueError(f"未知 SART 序列集：{sequence_set_id}")
+        steps = build_m6_plan(
+            short=short,
+            seed=sequence_seed(sequence_set_id),
+            protocol_task=task,
+            protocol_title=spec.display_name,
+            readiness_reference=spec.include_pvt,
+            sequence_set_id=sequence_set_id,
         )
-    return Protocol(task, display_name, category, "1.0", tuple(steps))
-
-
-def build(task: str, *, short: bool = False, include_pvt: bool = False) -> Protocol:
-    for key, name, category in _SPECS:
-        if key == task:
-            return _details(key, name, category, short, include_pvt)
-    raise KeyError(f"未知协议：{task}")
+    return Protocol(
+        task=task,
+        display_name=spec.display_name,
+        category=spec.category,
+        version="2.0",
+        steps=tuple(steps),
+        description=spec.description,
+        reference_labels_expected=spec.reference_labels_expected,
+    )
 
 
 def list_protocols() -> tuple[Protocol, ...]:
-    return tuple(Protocol(task, name, category, "1.0", ()) for task, name, category in _SPECS)
+    return tuple(
+        Protocol(
+            task=spec.task,
+            display_name=spec.display_name,
+            category=spec.category,
+            version="2.0",
+            steps=(),
+            description=spec.description,
+            reference_labels_expected=spec.reference_labels_expected,
+        )
+        for spec in _SPECS
+    )

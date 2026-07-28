@@ -14,13 +14,20 @@ PVT_B_LAPSE_SECONDS = LAPSE_SECONDS
 PVT_B_TIMEOUT_SECONDS = 30.0
 
 
-def classify_response(response_time_s: float | None, *, valid: bool = True) -> dict[str, object]:
+def classify_response(
+    response_time_s: float | None,
+    *,
+    valid: bool = True,
+    timeout: bool | None = None,
+) -> dict[str, object]:
     false_start = response_time_s is not None and response_time_s < FALSE_START_SECONDS
     lapse = response_time_s is None or response_time_s >= LAPSE_SECONDS
     return {
         "reaction_time_s": response_time_s,
+        "responded": response_time_s is not None,
         "false_start": false_start,
         "lapse": lapse,
+        "timeout": response_time_s is None if timeout is None else timeout,
         "valid": valid,
     }
 

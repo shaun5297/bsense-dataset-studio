@@ -26,4 +26,9 @@
 - M5 独立结束问卷；
 - M7 P300。
 
-脑安检所需基线、SART、状态表单和结束记录均保留在 `m6_readiness_study` 内。PVT-B 通过 `include_pvt` 显式启用，默认不执行。
+原 `m6_readiness_study` 在 `0.2.0` 中拆分为：
+
+- `m6_readiness_reference`：训练与验证参考采集，PVT-B 固定启用；
+- `m6_readiness_field`：现场外部验证与领域适配，PVT-B 固定关闭。
+
+`build("m6_readiness_study")` 仅保留为代码迁移兼容入口，不再出现在桌面协议列表中。

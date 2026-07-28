@@ -28,20 +28,52 @@ class DatasetTests(unittest.TestCase):
             path = save_manifest(root, build_manifest(root))
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(payload["records"], ["raw/sub-P001/ses-01/sample.xdf"])
+            self.assertEqual(payload["dataset_schema_version"], "1.1")
+            self.assertIn(
+                "raw/sub-P001/ses-01/sample.xdf",
+                payload["metadata"]["record_sha256"],
+            )
 
     def test_builder_joins_context_quality_events_and_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            stem = "sub-P001_ses-01_task-m6_readiness_study_run-001"
+            stem = "sub-P001_ses-01_task-m6_readiness_field_run-001"
             raw = root / "raw" / "sub-P001" / "ses-01"
             raw.mkdir(parents=True)
             (raw / f"{stem}.xdf").write_bytes(b"XDF:")
             (raw / f"{stem}_context.json").write_text(
-                json.dumps({"protocol_version": "1.0", "software_version": "0.1.0"}),
+                json.dumps(
+                    {
+                        "protocol_version": "2.0",
+                        "software_version": "0.1.0",
+                        "experiment_schema_version": "1.0",
+                        "values": {
+                            "kss_score": 6,
+                            "kss_post_score": 7,
+                            "sleep_duration_hours": 5.5,
+                            "shift_type": "夜班",
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
             (raw / f"{stem}_events.jsonl").write_text(
-                json.dumps({"timestamp": 1.0, "event": "sart_trial", "payload": {"should_respond": True, "outcome": "hit", "reaction_time_s": 0.4, "valid": True}}) + "\n",
+                json.dumps(
+                    {
+                        "timestamp": 1.0,
+                        "event": "sart_trial_result",
+                        "payload": {
+                            "trial": 1,
+                            "trial_kind": "assessment",
+                            "exclude_from_primary_analysis": False,
+                            "should_respond": True,
+                            "outcome": "hit",
+                            "reaction_time_s": 0.4,
+                            "valid": True,
+                        },
+                    }
+                )
+                + "\n",
                 encoding="utf-8",
             )
             quality = root / "quality"
@@ -51,6 +83,8 @@ class DatasetTests(unittest.TestCase):
             self.assertEqual(rows[0]["participant"], "P001")
             self.assertEqual(rows[0]["quality_status"], "pass")
             self.assertEqual(rows[0]["valid_trial_count"], 1)
+            self.assertEqual(rows[0]["kss_post_score"], 7)
+            self.assertEqual(rows[0]["sleep_duration_hours"], 5.5)
 
 
 if __name__ == "__main__":

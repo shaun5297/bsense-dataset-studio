@@ -2,6 +2,7 @@
   "schema_version": "1.0",
   "presets": {
     "device_check": ["deviceqc"],
-    "braincheck_collection": ["m6_readiness_study"]
+    "braincheck_reference_collection": ["m6_readiness_reference"],
+    "braincheck_field_collection": ["m6_readiness_field"]
   }
 }
