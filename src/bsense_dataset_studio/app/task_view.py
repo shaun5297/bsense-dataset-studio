@@ -12,6 +12,7 @@ except ImportError:  # Tk unavailable (e.g. headless CI); preview helpers stay i
     _TaskViewBase = object
 
 from ..protocols.base import Protocol, Step
+from . import theme
 
 
 @dataclass(frozen=True)
@@ -169,7 +170,12 @@ class TaskView(_TaskViewBase):
             column=0,
             sticky="w",
         )
-        ttk.Label(self, textvariable=self.summary, foreground="#4B5563").grid(
+        self.summary_label = ttk.Label(
+            self,
+            textvariable=self.summary,
+            foreground=theme.color("secondary"),
+        )
+        self.summary_label.grid(
             row=1,
             column=0,
             sticky="w",
@@ -223,6 +229,13 @@ class TaskView(_TaskViewBase):
             "<Configure>",
             lambda event: self.detail_label.configure(wraplength=max(280, event.width - 28)),
         )
+        theme.on_change(self._sync_theme)
+
+    def _sync_theme(self, _mode: str) -> None:
+        try:
+            self.summary_label.configure(foreground=theme.color("secondary"))
+        except Exception:
+            pass  # widget already destroyed
 
     def show_protocol(self, protocol: Protocol) -> None:
         stages = build_preview_stages(protocol)

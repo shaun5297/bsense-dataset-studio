@@ -4,6 +4,7 @@ from collections.abc import Callable
 from tkinter import StringVar, ttk
 
 from ..protocols import list_protocols
+from . import theme
 
 
 class ProtocolView(ttk.LabelFrame):
@@ -29,13 +30,21 @@ class ProtocolView(ttk.LabelFrame):
         )
         self.selector.pack(fill="x")
         self.selector.bind("<<ComboboxSelected>>", self._selection_changed)
-        ttk.Label(
+        self.description_label = ttk.Label(
             self,
             textvariable=self.description,
-            foreground="#6B7280",
+            foreground=theme.color("muted"),
             justify="left",
             wraplength=300,
-        ).pack(anchor="w", fill="x", pady=(6, 0))
+        )
+        self.description_label.pack(anchor="w", fill="x", pady=(6, 0))
+        theme.on_change(self._sync_theme)
+
+    def _sync_theme(self, _mode: str) -> None:
+        try:
+            self.description_label.configure(foreground=theme.color("muted"))
+        except Exception:
+            pass  # widget already destroyed
 
     @property
     def task(self) -> str:

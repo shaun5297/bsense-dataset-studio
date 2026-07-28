@@ -8,7 +8,25 @@ from ..acquisition.session import AcquisitionSession, lsl_clock
 from ..annotations import ANNOTATION_TYPES
 from ..protocols import Protocol
 from ..protocols.definitions import InputField, ProtocolStep
+from . import theme
 from .audio import play_cue
+
+# English choice values stay untouched in stored data; only the display
+# labels are translated for the operator form.
+_CHOICE_LABELS = {
+    "rested_control": "充分休息对照",
+    "natural_fatigue": "自然疲劳",
+    "post_night_shift": "夜班后",
+    "post_shift": "班后",
+    "post_rest_retest": "休息后复测",
+    "sleep_restricted": "睡眠限制",
+    "unknown_naturalistic": "未知（自然状态）",
+    "operator_assigned": "实验员指定",
+    "schedule_derived": "按排班推断",
+    "participant_reported": "受试者填报",
+    "first_test": "首次检测",
+    "retest": "复测",
+}
 
 
 def _stimulus_font(text: str) -> tuple[str, int, str]:
@@ -50,6 +68,7 @@ class ExecutionWindow(Toplevel):
         self.bind("<Return>", self._handle_return)
         self.bind("<F11>", self._toggle_fullscreen)
         self._form_variables: dict[str, StringVar | BooleanVar] = {}
+        self._choice_values: dict[str, dict[str, str]] = {}
         self._after_id: str | None = None
         self._current_step: ProtocolStep | None = None
         self._warning_played = False
@@ -57,43 +76,60 @@ class ExecutionWindow(Toplevel):
         container = ttk.Frame(self, padding=28)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(4, weight=1)
+        container.rowconfigure(2, weight=1)
         self.progress = StringVar(value="准备启动")
         self.countdown = StringVar(value="")
         self.title_text = StringVar(value="正在检查 8 路 LSL 流…")
         self.detail_text = StringVar(value="Marker 流会先创建，再启动 XDF Recorder。")
-        ttk.Label(
+        self.progress_label = ttk.Label(
             container,
             textvariable=self.progress,
             font=("", 13),
-            foreground="#4B5563",
-        ).grid(row=0, column=0, sticky="ew")
+            foreground=theme.color("secondary"),
+        )
+        self.progress_label.grid(row=0, column=0, sticky="ew")
         self.progressbar = ttk.Progressbar(container, mode="determinate")
         self.progressbar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        # Stimulus, instructions and countdown share the screen center so the
+        # subject never has to look away from the fixation area.
+        center = ttk.Frame(container)
+        center.grid(row=2, column=0, sticky="nsew")
         self.stimulus_label = ttk.Label(
-            container,
+            center,
             textvariable=self.title_text,
             font=("", 40, "bold"),
             anchor="center",
         )
-        self.stimulus_label.grid(row=2, column=0, sticky="ew", pady=(28, 10))
+        self.stimulus_label.pack(fill="both", expand=True)
         ttk.Label(
-            container,
+            center,
             textvariable=self.detail_text,
             font=("", 18),
             anchor="center",
             justify="center",
             wraplength=900,
-        ).grid(row=3, column=0, sticky="ew", pady=(0, 18))
+        ).pack(fill="x", pady=(0, 10))
+        self.countdown_label = ttk.Label(
+            center,
+            textvariable=self.countdown,
+            font=("", 22, "bold"),
+            anchor="center",
+        )
+        self.countdown_label.pack(fill="x")
 
         self.form_frame = ttk.Frame(container)
-        self.form_frame.grid(row=4, column=0, sticky="nsew")
+        self.form_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         self.form_frame.columnconfigure(1, weight=1)
 
         footer = ttk.Frame(container)
-        footer.grid(row=5, column=0, sticky="ew", pady=(16, 0))
-        self.countdown_label = ttk.Label(footer, textvariable=self.countdown, font=("", 16, "bold"))
-        self.countdown_label.pack(side="left")
+        footer.grid(row=4, column=0, sticky="ew", pady=(16, 0))
+        self.theme_button = ttk.Button(
+            footer,
+            text=self._theme_button_text(),
+            command=self._toggle_theme,
+        )
+        self.theme_button.pack(side="left")
         self.annotation_button = ttk.Button(
             footer,
             text="添加人工标注",
@@ -113,6 +149,14 @@ class ExecutionWindow(Toplevel):
             command=self._request_abort,
         )
         self.abort_button.pack(side="right", padx=(0, 8))
+        theme.on_change(self._sync_theme_widgets)
+
+    def _sync_theme_widgets(self, _mode: str) -> None:
+        try:
+            self.progress_label.configure(foreground=theme.color("secondary"))
+            self.theme_button.configure(text=self._theme_button_text())
+        except Exception:
+            pass  # window already destroyed
 
     def start(self) -> None:
         try:
@@ -178,6 +222,7 @@ class ExecutionWindow(Toplevel):
         for child in self.form_frame.winfo_children():
             child.destroy()
         self._form_variables.clear()
+        self._choice_values.clear()
         for row, field in enumerate(fields):
             ttk.Label(self.form_frame, text=field.label).grid(
                 row=row,
@@ -192,10 +237,12 @@ class ExecutionWindow(Toplevel):
             else:
                 variable = StringVar()
                 if field.kind == "choice":
+                    labels = [_CHOICE_LABELS.get(choice, choice) for choice in field.choices]
+                    self._choice_values[field.key] = dict(zip(labels, field.choices))
                     widget = ttk.Combobox(
                         self.form_frame,
                         textvariable=variable,
-                        values=field.choices,
+                        values=labels,
                         state="readonly",
                     )
                 else:
@@ -204,7 +251,10 @@ class ExecutionWindow(Toplevel):
             self._form_variables[field.key] = variable
 
     def _submit(self) -> None:
-        values = {key: variable.get() for key, variable in self._form_variables.items()}
+        values = {}
+        for key, variable in self._form_variables.items():
+            raw = variable.get()
+            values[key] = self._choice_values.get(key, {}).get(raw, raw)
         try:
             self.engine.advance(values)
         except ValueError as exc:
@@ -227,6 +277,13 @@ class ExecutionWindow(Toplevel):
 
     def _toggle_fullscreen(self, _event: object) -> None:
         self.attributes("-fullscreen", not bool(self.attributes("-fullscreen")))
+
+    def _theme_button_text(self) -> str:
+        return "切换到日间模式" if theme.mode() == "dark" else "切换到夜间模式"
+
+    def _toggle_theme(self) -> None:
+        theme.toggle(self.winfo_toplevel())
+        self.theme_button.configure(text=self._theme_button_text())
 
     def _play_step_sound(self, step: ProtocolStep | None, *, kind: str) -> None:
         if step is None:
