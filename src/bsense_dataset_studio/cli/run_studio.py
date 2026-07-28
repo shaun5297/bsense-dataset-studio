@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from ..app.main import run
 from ..protocols import build, list_protocols
@@ -12,6 +13,7 @@ def main() -> None:
     parser.add_argument("--preview")
     parser.add_argument("--short", action="store_true")
     parser.add_argument("--include-pvt", action="store_true")
+    parser.add_argument("--dataset-root", type=Path, help="桌面界面的初始数据根目录")
     args = parser.parse_args()
     if args.list_protocols:
         for protocol in list_protocols():
@@ -26,4 +28,4 @@ def main() -> None:
         for step in protocol.steps:
             print(f"{step.name}\t{step.duration_s}\t{step.instruction}")
         return
-    run()
+    run(dataset_root=args.dataset_root)

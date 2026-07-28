@@ -9,3 +9,11 @@ dist/
 dataset_root/restricted/
 dataset_root/raw/
 dataset_root/derived/
+dataset_root/quality/
+dataset_root/annotations/
+dataset_root/manifests/
+*.xdf
+*_context.json
+*_events.jsonl
+*_quality.json
+*_annotations.jsonl

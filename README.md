@@ -18,6 +18,20 @@ bash "macos/setup.sh"
 bash "macos/run.sh"
 ```
 
+首次启动时，左侧“实验与存储”区域会显示默认数据根目录：
+
+```text
+~/BSenseDatasets/braincheck
+```
+
+可以通过“选择…”改到独立硬盘或其他受控目录。界面会记住最近一次选择，并根据匿名被试、Session、协议和 Run 实时预览本次 XDF 保存位置。正式采集前点击“准备目录”，程序会创建标准数据集结构并检查目录是否可写。
+
+也可以在启动时指定数据根目录：
+
+```bash
+bsense-dataset-studio --dataset-root "/Volumes/BCI-DATA/braincheck"
+```
+
 常用入口：
 
 ```bash
