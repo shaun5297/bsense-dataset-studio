@@ -75,6 +75,7 @@ class Recorder:
                     state.inlet.close_stream()
                 except Exception:
                     pass
+                state.inlet = None
             writer.close()
             raise
 
@@ -126,6 +127,10 @@ class Recorder:
                         state.inlet.close_stream()
                     except Exception:
                         pass
+                    # Release the inlet promptly: while alive it keeps trying to
+                    # reconnect (liblsl "transmission broke off; re-connecting"
+                    # spam) and buffers device data in the background.
+                    state.inlet = None
                 writer.close()
 
         self._stop.clear()
