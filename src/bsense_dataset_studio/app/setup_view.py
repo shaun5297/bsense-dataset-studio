@@ -10,6 +10,7 @@ from ..storage import (
     prepare_run_storage,
     save_dataset_root,
 )
+from . import theme
 
 
 class SetupView(ttk.LabelFrame):
@@ -40,28 +41,38 @@ class SetupView(ttk.LabelFrame):
         ttk.Entry(storage_row, textvariable=self.dataset_root).grid(row=0, column=0, sticky="ew")
         ttk.Button(storage_row, text="选择…", command=self._choose_root).grid(row=0, column=1, padx=(6, 0))
 
-        ttk.Label(
+        self.output_preview_label = ttk.Label(
             self,
             textvariable=self.output_preview,
-            foreground="#4B5563",
+            foreground=theme.color("secondary"),
             justify="left",
             wraplength=300,
-        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        )
+        self.output_preview_label.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         actions = ttk.Frame(self)
         actions.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(7, 0))
-        ttk.Label(
+        self.storage_status_label = ttk.Label(
             actions,
             textvariable=self.storage_status,
-            foreground="#6B7280",
+            foreground=theme.color("muted"),
             justify="left",
             wraplength=210,
-        ).pack(side="left", fill="x", expand=True)
+        )
+        self.storage_status_label.pack(side="left", fill="x", expand=True)
         ttk.Button(actions, text="准备目录", command=self._prepare_root).pack(side="right", padx=(6, 0))
 
         self.columnconfigure(1, weight=1)
         for variable in (self.participant, self.session, self.run, self.dataset_root):
             variable.trace_add("write", self._inputs_changed)
+        theme.on_change(self._sync_theme)
         self._refresh_output_preview()
+
+    def _sync_theme(self, _mode: str) -> None:
+        try:
+            self.output_preview_label.configure(foreground=theme.color("secondary"))
+            self.storage_status_label.configure(foreground=theme.color("muted"))
+        except Exception:
+            pass  # widget already destroyed
 
     def set_task(self, task: str) -> None:
         self._task = task

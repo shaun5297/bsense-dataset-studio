@@ -97,6 +97,8 @@ class AcquisitionSession:
             self._recorder = self._recorder_factory(self.storage.xdf)
             self._recorder.start(timeout=timeout)
         except Exception as exc:
+            # A leaked marker outlet would surface as a duplicate stream on retry.
+            self._close_publisher()
             self.context_values["collection_finished_at"] = datetime.now(
                 timezone.utc
             ).isoformat()
@@ -174,10 +176,23 @@ class AcquisitionSession:
         except Exception:
             self.state = SessionState.FAILED
             raise
+        finally:
+            self._close_publisher()
         summary = getattr(self._recorder, "summary", None)
         if callable(summary):
             self.context_values["recorder_summary"] = summary()
         self.state = SessionState.STOPPED
+
+    def _close_publisher(self) -> None:
+        publisher, self._publisher = self._publisher, None
+        if publisher is None:
+            return
+        close = getattr(publisher, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
     def finalize(self, *, completion_status: str = "completed") -> Path:
         if self.state is SessionState.RECORDING:
