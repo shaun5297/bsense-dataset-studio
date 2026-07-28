@@ -30,7 +30,7 @@ class _State:
     channel_format: int
     count: int = 0
     first: float | None = None
-    last: float = 0.0
+    last: float | None = None
     next_clock_offset_at: float = 0.0
     clock_offset_count: int = 0
 
@@ -116,7 +116,12 @@ class Recorder:
                 self.error = exc
             finally:
                 for state in states:
-                    writer.write_stream_footer(state.stream_id, state.first or 0.0, state.last, state.count)
+                    writer.write_stream_footer(
+                        state.stream_id,
+                        state.first if state.first is not None else 0.0,
+                        state.last if state.last is not None else 0.0,
+                        state.count,
+                    )
                     try:
                         state.inlet.close_stream()
                     except Exception:
@@ -142,7 +147,7 @@ class Recorder:
             state.kind: {
                 "sample_count": state.count,
                 "first_timestamp": state.first,
-                "last_timestamp": state.last or None,
+                "last_timestamp": state.last,
                 "clock_offset_count": state.clock_offset_count,
             }
             for state in self._states

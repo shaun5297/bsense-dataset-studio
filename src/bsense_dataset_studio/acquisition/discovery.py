@@ -47,13 +47,20 @@ def discover(
     return found
 
 
-def _identity(info: Any, descriptor: StreamDescriptor) -> tuple[object, ...]:
+def _identity(
+    info: Any,
+    descriptor: StreamDescriptor,
+) -> tuple[object, ...] | None:
+    uid = str(_value(info, "uid", "")).strip()
+    source_id = descriptor.source_id.strip()
+    if not uid and not source_id:
+        return None
     return (
+        ("uid", uid) if uid else ("source_id", source_id),
         descriptor.kind,
         descriptor.name,
         descriptor.stream_type,
         descriptor.channel_count,
-        descriptor.source_id,
         str(_value(info, "hostname", "")),
     )
 
@@ -67,17 +74,29 @@ def dedupe_identical(found: Iterable[tuple[Any, StreamDescriptor]]) -> list[tupl
     occurrence is kept.
     """
     unique: dict[tuple[object, ...], tuple[Any, StreamDescriptor]] = {}
+    result: list[tuple[Any, StreamDescriptor]] = []
     for info, descriptor in found:
-        unique.setdefault(_identity(info, descriptor), (info, descriptor))
-    return list(unique.values())
+        identity = _identity(info, descriptor)
+        if identity is None:
+            result.append((info, descriptor))
+        elif identity not in unique:
+            item = (info, descriptor)
+            unique[identity] = item
+            result.append(item)
+    return result
 
 
 def select_unique(found: Iterable[tuple[Any, StreamDescriptor]], required: Iterable[str]) -> dict[str, tuple[Any, StreamDescriptor]]:
+    required_kinds = tuple(dict.fromkeys(required))
     grouped: dict[str, list[tuple[Any, StreamDescriptor]]] = {}
     for item in dedupe_identical(found):
         grouped.setdefault(item[1].kind, []).append(item)
-    missing = sorted(set(required) - grouped.keys())
-    duplicates = sorted(kind for kind, items in grouped.items() if kind in required and len(items) != 1)
+    missing = sorted(set(required_kinds) - grouped.keys())
+    duplicates = sorted(
+        kind
+        for kind, items in grouped.items()
+        if kind in required_kinds and len(items) != 1
+    )
     if missing or duplicates:
         details = []
         if missing:
@@ -88,4 +107,4 @@ def select_unique(found: Iterable[tuple[Any, StreamDescriptor]], required: Itera
             )
             details.append(f"重复流：{conflicts}")
         raise RuntimeError("；".join(details))
-    return {kind: grouped[kind][0] for kind in required}
+    return {kind: grouped[kind][0] for kind in required_kinds}
