@@ -41,36 +41,24 @@ def _stimulus_font(text: str) -> tuple[str, int, str]:
     return ("", 30, "bold")
 
 
-class _BooleanToggle(ttk.Frame):
-    """Large, theme-proof checkbox.
-
-    ttk.Checkbutton indicator glyphs differ across themes (a check in one
-    theme can render as a cross in another), so the state is shown with
-    explicit text glyphs plus a colored status word instead.
-    """
+class _BooleanToggle(ttk.Checkbutton):
+    """Large checkbox with explicit state text and native keyboard behavior."""
 
     def __init__(self, parent: object, variable: BooleanVar) -> None:
-        super().__init__(parent)
         self._variable = variable
-        self._box = ttk.Label(self, font=("", 20), cursor="hand2")
-        self._box.pack(side="left")
-        self._state = ttk.Label(self, font=("", 14))
-        self._state.pack(side="left", padx=(10, 0))
-        for widget in (self, self._box, self._state):
-            widget.bind("<Button-1>", self._toggle)
+        super().__init__(
+            parent,
+            variable=variable,
+            command=self._sync,
+            style="BooleanToggle.TCheckbutton",
+            takefocus=True,
+        )
         variable.trace_add("write", lambda *_args: self._sync())
         self._sync()
 
-    def _toggle(self, _event: object | None = None) -> None:
-        self._variable.set(not self._variable.get())
-
     def _sync(self) -> None:
         checked = bool(self._variable.get())
-        self._box.configure(text="☑" if checked else "☐")
-        self._state.configure(
-            text="已确认" if checked else "点击确认",
-            foreground=theme.color("ok") if checked else theme.color("muted"),
-        )
+        self.configure(text="☑ 已确认" if checked else "☐ 点击确认")
 
 
 class ExecutionWindow(Toplevel):
@@ -405,11 +393,11 @@ class ExecutionWindow(Toplevel):
                 stalled.append(label)
             self._quality_prev_counts[kind] = count
         if not stalled:
-            text, role = "● 信号正常", "ok"
+            text, role = "● 数据流正常", "ok"
         elif len(stalled) == len(self._CORE_KIND_LABELS):
-            text, role = "● 信号中断", "error"
+            text, role = "● 数据流中断", "error"
         else:
-            text, role = f"● 信号异常：{' / '.join(stalled)}", "warn"
+            text, role = f"● 数据流异常：{' / '.join(stalled)}", "warn"
         self.quality_badge.configure(text=text, foreground=theme.color(role))
 
     def _open_annotation_dialog(self) -> None:

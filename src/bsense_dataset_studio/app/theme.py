@@ -142,6 +142,18 @@ def apply(root: tk.Misc) -> None:
     style.configure("TCheckbutton", background=p["bg"], foreground=p["fg"])
     style.map("TCheckbutton", background=[("active", p["bg"])])
     style.configure(
+        "BooleanToggle.TCheckbutton",
+        background=p["bg"],
+        foreground=p["muted"],
+        font=("", 14),
+        padding=(4, 2),
+    )
+    style.map(
+        "BooleanToggle.TCheckbutton",
+        background=[("active", p["bg"])],
+        foreground=[("selected", p["ok"]), ("!selected", p["muted"])],
+    )
+    style.configure(
         "TEntry",
         fieldbackground=p["field"],
         foreground=p["fg"],
