@@ -186,21 +186,26 @@ class ProtocolEngine:
                 self.index = first_practice - 1
                 return self._enter_next()
             if not practice_passed:
+                # 练习两次仍未达标：不再中止采集。疲劳筛查的目标人群本来就容易
+                # 在 SART 上犯错，直接中止会丢掉最需要的数据；记录标记后继续正式采集。
                 self.session.merge_context(
                     {
                         "practice_attempts": self._practice_attempt,
                         "practice_criterion_met": False,
                     }
                 )
-                self.session.abort("sart_practice_criterion_not_met")
-                self.finished = True
-                return self._notify()
-            self.session.merge_context(
-                {
-                    "practice_attempts": self._practice_attempt,
-                    "practice_criterion_met": True,
-                }
-            )
+                self.session.publish(
+                    "sart_practice_criterion_not_met",
+                    payload={"attempt": self._practice_attempt, "continued": True},
+                    timestamp=self.step_started_at,
+                )
+            else:
+                self.session.merge_context(
+                    {
+                        "practice_attempts": self._practice_attempt,
+                        "practice_criterion_met": True,
+                    }
+                )
         self.session.publish(
             step.event,
             event_code=step.event_code,

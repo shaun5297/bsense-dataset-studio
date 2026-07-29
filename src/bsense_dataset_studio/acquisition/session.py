@@ -183,6 +183,14 @@ class AcquisitionSession:
             self.context_values["recorder_summary"] = summary()
         self.state = SessionState.STOPPED
 
+    def recorder_summary(self) -> dict[str, object]:
+        """Live per-stream sample counts from the recorder (empty when not recording)."""
+        recorder = self._recorder
+        if recorder is None or self.state is not SessionState.RECORDING:
+            return {}
+        summary = getattr(recorder, "summary", None)
+        return dict(summary()) if callable(summary) else {}
+
     def _close_publisher(self) -> None:
         publisher, self._publisher = self._publisher, None
         if publisher is None:
