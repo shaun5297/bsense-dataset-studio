@@ -52,6 +52,8 @@ class DatasetTests(unittest.TestCase):
                             "kss_post_score": 7,
                             "sleep_duration_hours": 5.5,
                             "shift_type": "夜班",
+                            "practice_attempts": 2,
+                            "practice_criterion_met": False,
                         },
                     }
                 ),
@@ -85,6 +87,8 @@ class DatasetTests(unittest.TestCase):
             self.assertEqual(rows[0]["valid_trial_count"], 1)
             self.assertEqual(rows[0]["kss_post_score"], 7)
             self.assertEqual(rows[0]["sleep_duration_hours"], 5.5)
+            self.assertEqual(rows[0]["practice_attempts"], 2)
+            self.assertIs(rows[0]["practice_criterion_met"], False)
 
 
 if __name__ == "__main__":

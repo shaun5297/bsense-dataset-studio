@@ -33,6 +33,8 @@ _CONTEXT_EXPORT_FIELDS = (
     "sequence_set_id",
     "random_seed",
     "no_go_positions",
+    "practice_attempts",
+    "practice_criterion_met",
 )
 
 

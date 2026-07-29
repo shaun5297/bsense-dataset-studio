@@ -57,10 +57,13 @@ def generate_reference_label(
             signed_score -= 2.0
             rationale.append("PVT 警觉表现稳定")
 
+    practice_criterion_met = context.get("practice_criterion_met")
     sart_trials = _number(sart.get("valid_trial_count")) or 0
     omission = _number(sart.get("omission_rate"))
     commission = _number(sart.get("commission_rate"))
-    if sart_trials >= 30 and omission is not None and commission is not None:
+    if practice_criterion_met is False:
+        rationale.append("SART 练习未达标，未作为标签来源")
+    elif sart_trials >= 30 and omission is not None and commission is not None:
         sources.append("sart")
         if omission >= 0.10 or commission >= 0.25:
             signed_score += 1.0

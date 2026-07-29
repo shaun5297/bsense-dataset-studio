@@ -34,6 +34,19 @@ class LabelsQualityEEGNetTests(unittest.TestCase):
         self.assertNotIn("eeg", impaired.reference_label_sources)
         self.assertTrue(impaired.provisional)
 
+    def test_reference_label_ignores_sart_when_practice_failed(self) -> None:
+        label = generate_reference_label(
+            {"practice_criterion_met": False},
+            {
+                "valid_trial_count": 180,
+                "omission_rate": 0.20,
+                "commission_rate": 0.40,
+            },
+            {},
+        )
+        self.assertNotIn("sart", label.reference_label_sources)
+        self.assertIn("SART 练习未达标，未作为标签来源", label.rationale)
+
     def test_windowed_quality_reports_motion_affected_windows(self) -> None:
         timestamps = [index / 10 for index in range(101)]
         eeg = [
