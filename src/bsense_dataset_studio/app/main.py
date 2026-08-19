@@ -32,6 +32,7 @@ class StudioApp:
             header,
             text=self._theme_button_text(),
             command=self._toggle_theme,
+            takefocus=False,
         )
         self.theme_button.pack(side="right")
         ttk.Label(header, text="BSense Dataset Studio", font=("", 24, "bold")).pack(anchor="w")
@@ -55,7 +56,12 @@ class StudioApp:
             on_abort=self.abort_collection,
         )
         self.operator.pack(fill="x", pady=(0, 10))
-        ttk.Button(left, text="刷新协议预览", command=self.preview).pack(anchor="e", pady=(2, 0))
+        ttk.Button(
+            left,
+            text="刷新协议预览",
+            command=self.preview,
+            takefocus=False,
+        ).pack(anchor="e", pady=(2, 0))
 
         self.task = TaskView(container)
         self.task.grid(row=1, column=1, sticky="nsew")

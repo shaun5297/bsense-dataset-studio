@@ -39,7 +39,12 @@ class SetupView(ttk.LabelFrame):
         storage_row.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(3, 0))
         storage_row.columnconfigure(0, weight=1)
         ttk.Entry(storage_row, textvariable=self.dataset_root).grid(row=0, column=0, sticky="ew")
-        ttk.Button(storage_row, text="选择…", command=self._choose_root).grid(row=0, column=1, padx=(6, 0))
+        ttk.Button(
+            storage_row,
+            text="选择…",
+            command=self._choose_root,
+            takefocus=False,
+        ).grid(row=0, column=1, padx=(6, 0))
 
         self.output_preview_label = ttk.Label(
             self,
@@ -59,7 +64,12 @@ class SetupView(ttk.LabelFrame):
             wraplength=210,
         )
         self.storage_status_label.pack(side="left", fill="x", expand=True)
-        ttk.Button(actions, text="准备目录", command=self._prepare_root).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            actions,
+            text="准备目录",
+            command=self._prepare_root,
+            takefocus=False,
+        ).pack(side="right", padx=(6, 0))
 
         self.columnconfigure(1, weight=1)
         for variable in (self.participant, self.session, self.run, self.dataset_root):

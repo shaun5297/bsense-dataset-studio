@@ -160,12 +160,14 @@ class ExecutionWindow(Toplevel):
             footer,
             text=self._theme_button_text(),
             command=self._toggle_theme,
+            takefocus=False,
         )
         self.theme_button.pack(side="left")
         self.annotation_button = ttk.Button(
             footer,
             text="添加人工标注",
             command=self._open_annotation_dialog,
+            takefocus=False,
         )
         self.annotation_button.pack(side="right")
         self.continue_button = ttk.Button(
@@ -173,12 +175,14 @@ class ExecutionWindow(Toplevel):
             text="确认并继续",
             command=self._submit,
             state="disabled",
+            takefocus=False,
         )
         self.continue_button.pack(side="right", padx=(0, 8))
         self.abort_button = ttk.Button(
             footer,
             text="中止采集",
             command=self._request_abort,
+            takefocus=False,
         )
         self.abort_button.pack(side="right", padx=(0, 8))
         self._unsubscribe_theme = theme.on_change(self._sync_theme_widgets)
@@ -200,6 +204,10 @@ class ExecutionWindow(Toplevel):
                 self._on_close_callback()
             return
         self.focus_force()
+        # 把键盘焦点放到刺激区而不是任何按钮上：ttk 按钮获得焦点时，空格键会
+        # 先被按钮 class 绑定激活（bindtags 顺序 widget -> class -> toplevel -> all），
+        # 导致 SART 任务中按空格误触发“中止采集”等按钮并弹出操作员确认框。
+        self.stimulus_label.focus_set()
         self._schedule_tick()
 
     def abort(self) -> None:
@@ -487,7 +495,12 @@ class AnnotationDialog(Toplevel):
             text="从训练数据中排除此时点",
             variable=self.exclude,
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 4))
-        ttk.Button(frame, text="保存标注", command=self._save).grid(
+        ttk.Button(
+            frame,
+            text="保存标注",
+            command=self._save,
+            takefocus=False,
+        ).grid(
             row=5,
             column=0,
             columnspan=2,

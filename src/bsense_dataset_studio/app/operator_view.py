@@ -24,11 +24,17 @@ class OperatorView(ttk.LabelFrame):
         )
         actions = ttk.Frame(self)
         actions.pack(fill="x", pady=(8, 0))
-        ttk.Button(actions, text="扫描 LSL", command=self.scan).pack(side="left")
+        ttk.Button(
+            actions,
+            text="扫描 LSL",
+            command=self.scan,
+            takefocus=False,
+        ).pack(side="left")
         self.start_button = ttk.Button(
             actions,
             text="开始试采",
             command=self._start,
+            takefocus=False,
         )
         self.start_button.pack(side="right")
         self.abort_button = ttk.Button(
@@ -36,6 +42,7 @@ class OperatorView(ttk.LabelFrame):
             text="中止",
             command=self._abort,
             state="disabled",
+            takefocus=False,
         )
         self.abort_button.pack(side="right", padx=(0, 6))
 
