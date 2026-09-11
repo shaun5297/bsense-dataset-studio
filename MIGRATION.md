@@ -31,4 +31,8 @@
 - `m6_readiness_reference`：训练与验证参考采集，PVT-B 固定启用；
 - `m6_readiness_field`：现场外部验证与领域适配，PVT-B 固定关闭。
 
-`build("m6_readiness_study")` 仅保留为代码迁移兼容入口，不再出现在桌面协议列表中。
+当前版本已停用 `m6_readiness_field`，桌面和预设仅保留正式参考采集与设备质检，默认选择正式参考采集。
+
+`build("m6_readiness_study")` 仅保留为代码迁移兼容入口，固定映射到含 PVT-B 的 `m6_readiness_reference`，不再出现在桌面协议列表中。显式请求关闭 PVT-B 会报错，避免生成不完整参考数据。
+
+历史 field 文件仍可由原有数据读取流程识别，任务身份不会被重命名为 reference；本次调整不删除或改写历史采集数据。

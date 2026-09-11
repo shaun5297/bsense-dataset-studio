@@ -12,7 +12,7 @@ def main() -> None:
     parser.add_argument("--list-protocols", action="store_true")
     parser.add_argument("--preview")
     parser.add_argument("--short", action="store_true")
-    parser.add_argument("--include-pvt", action="store_true")
+    parser.add_argument("--include-pvt", action="store_true", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--dataset-root", type=Path, help="桌面界面的初始数据根目录")
     args = parser.parse_args()
     if args.list_protocols:

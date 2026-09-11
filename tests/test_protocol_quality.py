@@ -9,18 +9,24 @@ class ProtocolQualityTests(unittest.TestCase):
     def test_only_device_qc_and_braincheck_collection_are_exposed(self) -> None:
         self.assertEqual(
             [protocol.task for protocol in list_protocols()],
-            ["deviceqc", "m6_readiness_reference", "m6_readiness_field"],
+            ["m6_readiness_reference", "deviceqc"],
         )
         with self.assertRaises(KeyError):
             build("m2_nback")
 
-    def test_reference_and_field_protocols_have_explicit_pvt_policy(self) -> None:
+    def test_only_reference_collection_can_be_started_and_pvt_is_required(self) -> None:
         reference = build("m6_readiness_reference")
-        field = build("m6_readiness_field")
         self.assertTrue(any(step.name.startswith("pvt") for step in reference.steps))
-        self.assertFalse(any(step.name.startswith("pvt") for step in field.steps))
         self.assertTrue(reference.reference_labels_expected)
-        self.assertFalse(field.reference_labels_expected)
+        with self.assertRaises(KeyError):
+            build("m6_readiness_field")
+        with self.assertRaises(ValueError):
+            build("m6_readiness_reference", include_pvt=False)
+        with self.assertRaises(ValueError):
+            build("m6_readiness_study", include_pvt=False)
+        legacy = build("m6_readiness_study")
+        self.assertEqual(legacy.task, reference.task)
+        self.assertEqual(legacy.steps, reference.steps)
 
     def test_protocol_step_retains_execution_metadata_and_fields(self) -> None:
         protocol = build("m6_readiness_reference")
