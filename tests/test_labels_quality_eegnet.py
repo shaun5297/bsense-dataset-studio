@@ -225,6 +225,36 @@ class LabelsQualityEEGNetTests(unittest.TestCase):
                 rows[0]["reference_label_version"],
                 "reference-label-v1-provisional",
             )
+            # Salvage only motion-rejected runs, keeping the per-window gate.
+            report_path = quality / f"{stem}_quality.json"
+            rejected = {
+                "usable_for_eeg_model": False,
+                "lsl": {"stream_complete": True},
+                "eeg": {"valid_channel_ratio": 1, "valid_window_ratio": 1},
+                "exclusion_reasons": ["high_motion_artifact_ratio"],
+            }
+            report_path.write_text(json.dumps(rejected))
+            with patch(
+                "bsense_dataset_studio.dataset.eegnet.read_xdf",
+                return_value=(streams, {}),
+            ):
+                build_eegnet_dataset(root, output, target_srate=10)
+                self.assertEqual(len(np.load(output)["X"]), 0)
+                build_eegnet_dataset(
+                    root, output, target_srate=10, quality_profile="pilot_clean_windows"
+                )
+                self.assertEqual(len(np.load(output)["X"]), 6)
+                self.assertFalse(
+                    json.loads(metadata_path.read_text().splitlines()[0])[
+                        "original_run_qc_pass"
+                    ]
+                )
+                rejected["exclusion_reasons"].append("insufficient_eeg_channels")
+                report_path.write_text(json.dumps(rejected))
+                build_eegnet_dataset(
+                    root, output, target_srate=10, quality_profile="pilot_clean_windows"
+                )
+                self.assertEqual(len(np.load(output)["X"]), 0)
 
 
 def _stream(
@@ -234,16 +264,7 @@ def _stream(
     rows: list[list[float]],
     labels: tuple[str, ...] = (),
 ) -> dict[str, object]:
-    desc = {
-        "channels": [
-            {
-                "channel": [
-                    {"label": [label]}
-                    for label in labels
-                ]
-            }
-        ]
-    }
+    desc = {"channels": [{"channel": [{"label": [label]} for label in labels]}]}
     return {
         "info": {
             "type": [stream_type],

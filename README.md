@@ -77,6 +77,22 @@ bsense-dataset-build \
   --target-srate 你的目标采样率
 ```
 
+## EEGNet 训练与导出
+
+已实现两通道 EEGNet 训练、模型导出及 BrainCheck 推理协议。
+
+```bash
+python -m pip install -e ".[training]"
+bsense-eegnet-train --dataset "/path/eeg_windows.npz" --output "/path/new-model"
+```
+
+默认要求被试互斥且两类齐全的 train/validation/test，验证集用于早停和校准。
+显式 `--pilot-fit-only --epochs 20` 可进行全数据工程拟合，不生成独立验证成绩或校准阈值。
+`bsense-dataset-build --quality-profile pilot_clean_windows` 可从仅因整体运动比例被拒的记录提取逐窗合格数据，保留原始 QC。
+
+本次真实数据拟合使用 3 位受试者、4 次记录、363 个窗口，模型已接入 BrainCheck。
+该规模不支持独立性能结论。完整参数、来源和两种训练模式见 [训练与导出说明](docs/EEGNET_TRAINING.md)。
+
 ## 标签边界
 
 `reference-label-v1-provisional` 仅使用 KSS、PVT、SART、睡眠与连续清醒信息，不使用 EEG 特征，避免循环定义。该规则仍需通过试采和统计分析校准，`uncertain` 样本默认不进入二分类训练。

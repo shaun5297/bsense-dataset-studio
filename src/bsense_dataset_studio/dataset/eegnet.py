@@ -36,6 +36,8 @@ class EEGWindowMetadata:
     target_srate: float
     preprocessing: str
     reference_label_version: str
+    quality_profile: str = "strict"
+    original_run_qc_pass: bool = True
 
 
 def build_eegnet_dataset(
@@ -46,6 +48,7 @@ def build_eegnet_dataset(
     step_seconds: float = 2.0,
     target_srate: float = 250.0,
     expected_channels: int = 2,
+    quality_profile: str = "strict",
 ) -> tuple[Path, Path]:
     try:
         import numpy as np
@@ -53,6 +56,8 @@ def build_eegnet_dataset(
         raise RuntimeError("构建 EEGNet 数据需要安装 numpy") from exc
     if window_seconds <= 0 or step_seconds <= 0 or target_srate <= 0:
         raise ValueError("窗口、步长和目标采样率必须为正数")
+    if quality_profile not in {"strict", "pilot_clean_windows"}:
+        raise ValueError("未知质量配置")
     target_samples = round(window_seconds * target_srate)
     record_rows = build_records(dataset_root)
     records = {
@@ -83,11 +88,18 @@ def build_eegnet_dataset(
             "impaired",
         }:
             continue
-        quality_path = (
-            dataset_root / "quality" / f"{xdf_path.stem}_quality.json"
-        )
+        quality_path = dataset_root / "quality" / f"{xdf_path.stem}_quality.json"
         quality = _load_json(quality_path)
-        if quality.get("usable_for_eeg_model") is not True:
+        original_pass = quality.get("usable_for_eeg_model") is True
+        salvage = (
+            quality_profile == "pilot_clean_windows"
+            and quality.get("lsl", {}).get("stream_complete") is True
+            and float(quality.get("eeg", {}).get("valid_channel_ratio", 0)) >= 0.5
+            and float(quality.get("eeg", {}).get("valid_window_ratio", 0)) >= 0.8
+            and set(quality.get("exclusion_reasons", []))
+            <= {"high_motion_artifact_ratio"}
+        )
+        if not original_pass and not salvage:
             continue
         events_path = xdf_path.with_name(f"{xdf_path.stem}_events.jsonl")
         if not events_path.exists():
@@ -97,9 +109,7 @@ def build_eegnet_dataset(
         if not segments:
             continue
         annotations_path = (
-            dataset_root
-            / "annotations"
-            / f"{xdf_path.stem}_annotations.jsonl"
+            dataset_root / "annotations" / f"{xdf_path.stem}_annotations.jsonl"
         )
         exclusions = _annotation_exclusions(annotations_path)
         streams, _header = read_xdf(xdf_path)
@@ -116,9 +126,7 @@ def build_eegnet_dataset(
         eeg_timestamps, eeg_rows = stream_data(eeg_stream)
         motion_timestamps, motion_rows = stream_data(motion_stream)
         if not eeg_rows or min(len(row) for row in eeg_rows) != expected_channels:
-            raise ValueError(
-                f"{xdf_path}: EEG 通道数不是预期的 {expected_channels}"
-            )
+            raise ValueError(f"{xdf_path}: EEG 通道数不是预期的 {expected_channels}")
         channel_names = _channel_names(eeg_stream, expected_channels)
         if channel_reference is None:
             channel_reference = channel_names
@@ -187,9 +195,9 @@ def build_eegnet_dataset(
                         channel_names=channel_names,
                         target_srate=target_srate,
                         preprocessing="demean+fft_bandpass_1_40_hz",
-                        reference_label_version=str(
-                            record["reference_label_version"]
-                        ),
+                        reference_label_version=str(record["reference_label_version"]),
+                        quality_profile=quality_profile,
+                        original_run_qc_pass=original_pass,
                     )
                 )
                 cursor += step_seconds
@@ -207,12 +215,16 @@ def build_eegnet_dataset(
     metadata_path = output.with_suffix(".jsonl")
     metadata_path.write_text(
         "".join(
-            json.dumps(asdict(item), ensure_ascii=False) + "\n"
-            for item in metadata
+            json.dumps(asdict(item), ensure_ascii=False) + "\n" for item in metadata
         ),
         encoding="utf-8",
     )
     summary = {
+        "data_origin": "bsense_reference_export",
+        "quality_profile": quality_profile,
+        "run_qc_policy": "clean windows may be salvaged from motion-only rejected runs"
+        if quality_profile != "strict"
+        else "original run gate",
         "shape": list(x_values.shape),
         "target_counts": {
             "alert": sum(item.target_name == "alert" for item in metadata),
@@ -272,7 +284,11 @@ def _training_segments(
         ),
         ("sart_assessment", "sart_start", "sart_end"),
     ):
-        if start_name in names and end_name in names and names[end_name] > names[start_name]:
+        if (
+            start_name in names
+            and end_name in names
+            and names[end_name] > names[start_name]
+        ):
             segments.append((label, names[start_name], names[end_name]))
     return segments
 
@@ -296,7 +312,10 @@ def _overlaps_exclusion(
     end: float,
     exclusions: list[tuple[float, float]],
 ) -> bool:
-    return any(start < excluded_end and end > excluded_start for excluded_start, excluded_end in exclusions)
+    return any(
+        start < excluded_end and end > excluded_start
+        for excluded_start, excluded_end in exclusions
+    )
 
 
 def _slice_rows(
@@ -306,9 +325,7 @@ def _slice_rows(
     end: float,
 ) -> tuple[list[float], list[list[float]]]:
     indexes = [
-        index
-        for index, timestamp in enumerate(timestamps)
-        if start <= timestamp < end
+        index for index, timestamp in enumerate(timestamps) if start <= timestamp < end
     ]
     return (
         [timestamps[index] for index in indexes],
@@ -328,11 +345,22 @@ def _resample_and_filter(
 ) -> Any | None:
     import numpy as np
 
-    minimum_samples = max(2, round((nominal_srate or target_srate) * (end - start) * 0.8))
+    minimum_samples = max(
+        2, round((nominal_srate or target_srate) * (end - start) * 0.8)
+    )
     if len(timestamps) < minimum_samples:
         return None
     source_times = np.asarray(timestamps, dtype=float)
     source = np.asarray(rows, dtype=float)
+    if (
+        not np.isfinite(source).all()
+        or not np.isfinite(source_times).all()
+        or np.any(np.diff(source_times) <= 0)
+        or source_times[0] > start + 0.1
+        or source_times[-1] < end - 0.104
+        or np.max(np.diff(source_times)) > 0.1 + 1e-8
+    ):
+        return None
     target_times = start + np.arange(target_samples, dtype=float) / target_srate
     resampled = np.vstack(
         [
